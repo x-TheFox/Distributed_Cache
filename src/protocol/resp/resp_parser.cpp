@@ -1,6 +1,8 @@
 #include "protocol/resp/resp_parser.hpp"
 
-#include <cctype>
+#include <charconv>
+#include <limits>
+#include <system_error>
 
 namespace cache::protocol::resp {
 namespace {
@@ -18,26 +20,22 @@ bool ParseNumber(std::string_view text, long long* value) {
   if (text.empty()) {
     return false;
   }
-  bool negative = text.front() == '-';
-  size_t start = negative ? 1 : 0;
-  if (start == text.size()) {
+  long long result = 0;
+  auto begin = text.data();
+  auto end = text.data() + text.size();
+  auto [ptr, ec] = std::from_chars(begin, end, result);
+  if (ec != std::errc{} || ptr != end) {
     return false;
   }
-  long long result = 0;
-  for (size_t i = start; i < text.size(); ++i) {
-    unsigned char ch = static_cast<unsigned char>(text[i]);
-    if (!std::isdigit(ch)) {
-      return false;
-    }
-    result = result * 10 + (text[i] - '0');
-  }
-  *value = negative ? -result : result;
+  *value = result;
   return true;
 }
 }  // namespace
 
 RESPCommand ParseRESP(std::string_view frame) {
   RESPCommand cmd;
+  constexpr long long kMaxArrayElements = 1024;
+  constexpr long long kMaxBulkLength = 1024 * 1024;
   size_t offset = 0;
   std::string_view line;
   if (!ReadLine(frame, &offset, &line)) {
@@ -48,7 +46,8 @@ RESPCommand ParseRESP(std::string_view frame) {
   }
 
   long long count = 0;
-  if (!ParseNumber(line.substr(1), &count) || count <= 0) {
+  if (!ParseNumber(line.substr(1), &count) || count <= 0 ||
+      count > kMaxArrayElements) {
     return cmd;
   }
 
@@ -63,15 +62,20 @@ RESPCommand ParseRESP(std::string_view frame) {
       return RESPCommand{};
     }
     long long length = 0;
-    if (!ParseNumber(line.substr(1), &length) || length < 0) {
+    if (!ParseNumber(line.substr(1), &length) || length < 0 ||
+        length > kMaxBulkLength) {
+      return RESPCommand{};
+    }
+    if (length > static_cast<long long>(std::numeric_limits<size_t>::max())) {
       return RESPCommand{};
     }
     auto remaining = frame.size() - offset;
-    if (remaining < static_cast<size_t>(length + 2)) {
+    auto length_size = static_cast<size_t>(length);
+    if (remaining < 2 || length_size > remaining - 2) {
       return RESPCommand{};
     }
-    parts.emplace_back(frame.substr(offset, static_cast<size_t>(length)));
-    offset += static_cast<size_t>(length);
+    parts.emplace_back(frame.substr(offset, length_size));
+    offset += length_size;
     if (frame.substr(offset, 2) != "\r\n") {
       return RESPCommand{};
     }
