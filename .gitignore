@@ -38,7 +38,9 @@ dist/
 
 # Superpowers brainstorming artifacts
 /.superpowers/
+/.worktrees/
 
 # Generated benchmark/docs artifacts
 /bench/out/
 /docs/generated/
+/docs/
