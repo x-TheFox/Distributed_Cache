@@ -25,11 +25,13 @@ class ConcurrentStore {
   };
 
   Stripe& StripeFor(const std::string& key);
-  void EvictIfNeeded(Stripe& stripe);
+  size_t StripeIndexForKey(const std::string& key) const;
+  void EnforceCapacity();
   void TouchEntry(ValueEntry& entry, std::chrono::steady_clock::time_point now);
+  std::string SelectVictimKey(bool in_protected_segment) const;
 
   std::vector<Stripe> stripes_;
   size_t max_entries_;
-  size_t max_entries_per_stripe_;
+  size_t protected_entries_limit_;
 };
 }  // namespace cache::core

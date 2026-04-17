@@ -19,11 +19,9 @@ uint64_t ToNs(std::chrono::steady_clock::time_point tp) {
 ConcurrentStore::ConcurrentStore(size_t stripes, size_t max_entries)
     : stripes_(stripes == 0 ? 1 : stripes),
       max_entries_(max_entries),
-      max_entries_per_stripe_(0) {
+      protected_entries_limit_(0) {
   if (max_entries_ > 0) {
-    auto stripe_count = stripes_.size();
-    max_entries_per_stripe_ =
-        std::max<size_t>(1, (max_entries_ + stripe_count - 1) / stripe_count);
+    protected_entries_limit_ = std::max<size_t>(1, max_entries_ / 2);
   }
 }
 
@@ -38,33 +36,86 @@ void ConcurrentStore::TouchEntry(ValueEntry& entry,
   }
 }
 
-void ConcurrentStore::EvictIfNeeded(Stripe& stripe) {
-  if (max_entries_per_stripe_ == 0) {
-    return;
-  }
-
-  auto now = std::chrono::steady_clock::now();
-  for (auto it = stripe.map.begin(); it != stripe.map.end();) {
-    if (it->second.IsExpired(now)) {
-      it = stripe.map.erase(it);
-    } else {
-      ++it;
-    }
-  }
-
-  while (stripe.map.size() > max_entries_per_stripe_) {
-    std::vector<eviction::EvictionCandidate> candidates;
-    candidates.reserve(stripe.map.size());
+std::string ConcurrentStore::SelectVictimKey(
+    bool in_protected_segment) const {
+  std::vector<eviction::EvictionCandidate> candidates;
+  for (const auto& stripe : stripes_) {
     for (const auto& [key, entry] : stripe.map) {
+      if (entry.in_protected_segment != in_protected_segment) {
+        continue;
+      }
       candidates.push_back(eviction::EvictionCandidate{
           key, entry.lfu_count, entry.last_touch_ns, entry.in_protected_segment});
     }
+  }
+  return eviction::SelectVictim(candidates);
+}
 
-    auto victim = eviction::SelectVictim(candidates);
-    if (victim.empty()) {
+void ConcurrentStore::EnforceCapacity() {
+  if (max_entries_ == 0) {
+    return;
+  }
+
+  std::vector<std::unique_lock<std::shared_mutex>> locks;
+  locks.reserve(stripes_.size());
+  for (auto& stripe : stripes_) {
+    locks.emplace_back(stripe.mu);
+  }
+
+  auto now = std::chrono::steady_clock::now();
+  size_t total_entries = 0;
+  size_t protected_entries = 0;
+  for (auto& stripe : stripes_) {
+    for (auto it = stripe.map.begin(); it != stripe.map.end();) {
+      if (it->second.IsExpired(now)) {
+        it = stripe.map.erase(it);
+      } else {
+        ++total_entries;
+        if (it->second.in_protected_segment) {
+          ++protected_entries;
+        }
+        ++it;
+      }
+    }
+  }
+
+  while (protected_entries > protected_entries_limit_) {
+    auto victim_key = SelectVictimKey(true);
+    if (victim_key.empty()) {
       break;
     }
-    stripe.map.erase(victim);
+    auto& stripe = StripeFor(victim_key);
+    auto it = stripe.map.find(victim_key);
+    if (it == stripe.map.end()) {
+      break;
+    }
+    if (it->second.in_protected_segment) {
+      it->second.in_protected_segment = false;
+      it->second.lfu_count = 1;
+      --protected_entries;
+    } else {
+      break;
+    }
+  }
+
+  while (total_entries > max_entries_) {
+    auto victim_key = SelectVictimKey(false);
+    if (victim_key.empty()) {
+      victim_key = SelectVictimKey(true);
+    }
+    if (victim_key.empty()) {
+      break;
+    }
+    auto& stripe = StripeFor(victim_key);
+    auto it = stripe.map.find(victim_key);
+    if (it == stripe.map.end()) {
+      break;
+    }
+    if (it->second.in_protected_segment && protected_entries > 0) {
+      --protected_entries;
+    }
+    stripe.map.erase(it);
+    --total_entries;
   }
 }
 
@@ -80,17 +131,20 @@ void ConcurrentStore::Set(
   auto now = std::chrono::steady_clock::now();
   auto now_ns = ToNs(now);
 
-  std::unique_lock lock(stripe.mu);
-  auto it = stripe.map.find(key);
-  if (it != stripe.map.end()) {
-    it->second.value = std::move(value);
-    it->second.expires_at = expires_at;
-    TouchEntry(it->second, now);
-  } else {
-    stripe.map.emplace(std::move(key),
-                       ValueEntry{std::move(value), expires_at, 1, now_ns, false});
+  {
+    std::unique_lock lock(stripe.mu);
+    auto it = stripe.map.find(key);
+    if (it != stripe.map.end()) {
+      it->second.value = std::move(value);
+      it->second.expires_at = expires_at;
+      TouchEntry(it->second, now);
+    } else {
+      stripe.map.emplace(
+          std::move(key),
+          ValueEntry{std::move(value), expires_at, 1, now_ns, false});
+    }
   }
-  EvictIfNeeded(stripe);
+  EnforceCapacity();
 }
 
 std::optional<std::string> ConcurrentStore::Get(const std::string& key) {
@@ -122,7 +176,11 @@ std::optional<std::string> ConcurrentStore::Get(const std::string& key) {
 }
 
 ConcurrentStore::Stripe& ConcurrentStore::StripeFor(const std::string& key) {
-  auto idx = std::hash<std::string>{}(key) % stripes_.size();
+  auto idx = StripeIndexForKey(key);
   return stripes_[idx];
+}
+
+size_t ConcurrentStore::StripeIndexForKey(const std::string& key) const {
+  return std::hash<std::string>{}(key) % stripes_.size();
 }
 }  // namespace cache::core
