@@ -66,7 +66,8 @@ RESPCommand ParseRESP(std::string_view frame) {
         length > kMaxBulkLength) {
       return RESPCommand{};
     }
-    if (length > static_cast<long long>(std::numeric_limits<size_t>::max())) {
+    if (static_cast<unsigned long long>(length) >
+        std::numeric_limits<size_t>::max()) {
       return RESPCommand{};
     }
     auto remaining = frame.size() - offset;
