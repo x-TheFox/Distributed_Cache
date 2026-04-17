@@ -9,7 +9,9 @@
 
 #include <gtest/gtest.h>
 
+#define private public
 #include "core/concurrent_store.hpp"
+#undef private
 
 namespace {
 std::string FindKeyForStripe(size_t stripe_index, size_t stripe_count, int seed) {
@@ -20,6 +22,18 @@ std::string FindKeyForStripe(size_t stripe_index, size_t stripe_count, int seed)
       return key;
     }
   }
+}
+
+size_t CountProtectedEntries(const cache::core::ConcurrentStore& store) {
+  size_t count = 0;
+  for (const auto& stripe : store.stripes_) {
+    for (const auto& [key, entry] : stripe.map) {
+      if (entry.in_protected_segment) {
+        ++count;
+      }
+    }
+  }
+  return count;
 }
 }  // namespace
 
@@ -119,4 +133,20 @@ TEST(ConcurrentStore, DemotesProtectedEntriesUnderPressure) {
   auto b = store.Get("b");
   ASSERT_TRUE(b.has_value());
   EXPECT_EQ(*b, "v2");
+}
+
+TEST(ConcurrentStore, DoesNotDemoteWithoutPressure) {
+  cache::core::ConcurrentStore store(1, 6);
+  store.Set("a", "v1", std::nullopt);
+  store.Set("b", "v2", std::nullopt);
+  store.Set("c", "v3", std::nullopt);
+  store.Set("d", "v4", std::nullopt);
+
+  ASSERT_TRUE(store.Get("a").has_value());
+  ASSERT_TRUE(store.Get("b").has_value());
+  ASSERT_TRUE(store.Get("c").has_value());
+  ASSERT_TRUE(store.Get("d").has_value());
+
+  store.Set("e", "v5", std::nullopt);
+  EXPECT_EQ(CountProtectedEntries(store), 4u);
 }

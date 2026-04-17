@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <optional>
@@ -28,10 +29,12 @@ class ConcurrentStore {
   size_t StripeIndexForKey(const std::string& key) const;
   void EnforceCapacity();
   void TouchEntry(ValueEntry& entry, std::chrono::steady_clock::time_point now);
-  std::string SelectVictimKey(bool in_protected_segment) const;
+  std::string SelectVictimKey(bool in_protected_segment);
 
   std::vector<Stripe> stripes_;
   size_t max_entries_;
   size_t protected_entries_limit_;
+  std::atomic<size_t> total_entries_{0};
+  std::atomic<size_t> protected_entries_{0};
 };
 }  // namespace cache::core

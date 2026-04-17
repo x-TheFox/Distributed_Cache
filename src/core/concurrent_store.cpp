@@ -31,15 +31,17 @@ void ConcurrentStore::TouchEntry(ValueEntry& entry,
     ++entry.lfu_count;
   }
   entry.last_touch_ns = ToNs(now);
-  if (entry.lfu_count >= 2) {
+  if (!entry.in_protected_segment && entry.lfu_count >= 2) {
     entry.in_protected_segment = true;
+    protected_entries_.fetch_add(1, std::memory_order_relaxed);
   }
 }
 
 std::string ConcurrentStore::SelectVictimKey(
-    bool in_protected_segment) const {
+    bool in_protected_segment) {
   std::vector<eviction::EvictionCandidate> candidates;
-  for (const auto& stripe : stripes_) {
+  for (auto& stripe : stripes_) {
+    std::shared_lock lock(stripe.mu);
     for (const auto& [key, entry] : stripe.map) {
       if (entry.in_protected_segment != in_protected_segment) {
         continue;
@@ -56,46 +58,52 @@ void ConcurrentStore::EnforceCapacity() {
     return;
   }
 
-  std::vector<std::unique_lock<std::shared_mutex>> locks;
-  locks.reserve(stripes_.size());
-  for (auto& stripe : stripes_) {
-    locks.emplace_back(stripe.mu);
+  auto total_entries = total_entries_.load(std::memory_order_relaxed);
+  if (total_entries < max_entries_) {
+    return;
   }
 
   auto now = std::chrono::steady_clock::now();
-  size_t total_entries = 0;
-  size_t protected_entries = 0;
   for (auto& stripe : stripes_) {
+    std::unique_lock lock(stripe.mu);
     for (auto it = stripe.map.begin(); it != stripe.map.end();) {
       if (it->second.IsExpired(now)) {
-        it = stripe.map.erase(it);
-      } else {
-        ++total_entries;
         if (it->second.in_protected_segment) {
-          ++protected_entries;
+          protected_entries_.fetch_sub(1, std::memory_order_relaxed);
         }
+        it = stripe.map.erase(it);
+        total_entries_.fetch_sub(1, std::memory_order_relaxed);
+      } else {
         ++it;
       }
     }
   }
 
-  while (protected_entries > protected_entries_limit_) {
+  total_entries = total_entries_.load(std::memory_order_relaxed);
+  if (total_entries < max_entries_) {
+    return;
+  }
+
+  auto protected_entries = protected_entries_.load(std::memory_order_relaxed);
+  while (total_entries >= max_entries_ &&
+         protected_entries > protected_entries_limit_) {
     auto victim_key = SelectVictimKey(true);
     if (victim_key.empty()) {
       break;
     }
     auto& stripe = StripeFor(victim_key);
+    std::unique_lock lock(stripe.mu);
     auto it = stripe.map.find(victim_key);
-    if (it == stripe.map.end()) {
-      break;
+    if (it == stripe.map.end() || !it->second.in_protected_segment) {
+      protected_entries = protected_entries_.load(std::memory_order_relaxed);
+      total_entries = total_entries_.load(std::memory_order_relaxed);
+      continue;
     }
-    if (it->second.in_protected_segment) {
-      it->second.in_protected_segment = false;
-      it->second.lfu_count = 1;
-      --protected_entries;
-    } else {
-      break;
-    }
+    it->second.in_protected_segment = false;
+    it->second.lfu_count = 1;
+    protected_entries_.fetch_sub(1, std::memory_order_relaxed);
+    protected_entries = protected_entries_.load(std::memory_order_relaxed);
+    total_entries = total_entries_.load(std::memory_order_relaxed);
   }
 
   while (total_entries > max_entries_) {
@@ -107,15 +115,18 @@ void ConcurrentStore::EnforceCapacity() {
       break;
     }
     auto& stripe = StripeFor(victim_key);
+    std::unique_lock lock(stripe.mu);
     auto it = stripe.map.find(victim_key);
     if (it == stripe.map.end()) {
-      break;
+      total_entries = total_entries_.load(std::memory_order_relaxed);
+      continue;
     }
-    if (it->second.in_protected_segment && protected_entries > 0) {
-      --protected_entries;
+    if (it->second.in_protected_segment) {
+      protected_entries_.fetch_sub(1, std::memory_order_relaxed);
     }
     stripe.map.erase(it);
-    --total_entries;
+    total_entries_.fetch_sub(1, std::memory_order_relaxed);
+    total_entries = total_entries_.load(std::memory_order_relaxed);
   }
 }
 
@@ -142,6 +153,7 @@ void ConcurrentStore::Set(
       stripe.map.emplace(
           std::move(key),
           ValueEntry{std::move(value), expires_at, 1, now_ns, false});
+      total_entries_.fetch_add(1, std::memory_order_relaxed);
     }
   }
   EnforceCapacity();
@@ -168,7 +180,11 @@ std::optional<std::string> ConcurrentStore::Get(const std::string& key) {
   }
   auto now = std::chrono::steady_clock::now();
   if (it->second.IsExpired(now)) {
+    if (it->second.in_protected_segment) {
+      protected_entries_.fetch_sub(1, std::memory_order_relaxed);
+    }
     stripe.map.erase(it);
+    total_entries_.fetch_sub(1, std::memory_order_relaxed);
     return std::nullopt;
   }
   TouchEntry(it->second, now);
