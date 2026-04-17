@@ -3,6 +3,9 @@
 #include "server/command_dispatcher.hpp"
 
 namespace cache::protocol::grpc {
+namespace {
+constexpr char kEmptyKeyMessage[] = "key must not be empty";
+}  // namespace
 
 CacheServiceImpl::CacheServiceImpl(cache::core::ConcurrentStore& store)
     : store_(store) {}
@@ -10,6 +13,12 @@ CacheServiceImpl::CacheServiceImpl(cache::core::ConcurrentStore& store)
 ::grpc::Status CacheServiceImpl::Set(::grpc::ServerContext*,
                                      const cache::SetRequest* request,
                                      cache::SetResponse* response) {
+  if (request->key().empty()) {
+    response->set_ok(false);
+    response->set_error(kEmptyKeyMessage);
+    return ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT,
+                          kEmptyKeyMessage);
+  }
   auto result = cache::server::DispatchCommand(
       "SET", {request->key(), request->value()}, store_);
   if (result.status == cache::server::CommandStatus::kOk) {
@@ -24,6 +33,12 @@ CacheServiceImpl::CacheServiceImpl(cache::core::ConcurrentStore& store)
 ::grpc::Status CacheServiceImpl::Get(::grpc::ServerContext*,
                                      const cache::GetRequest* request,
                                      cache::GetResponse* response) {
+  if (request->key().empty()) {
+    response->set_found(false);
+    response->set_error(kEmptyKeyMessage);
+    return ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT,
+                          kEmptyKeyMessage);
+  }
   auto result = cache::server::DispatchCommand("GET", {request->key()}, store_);
   if (result.status == cache::server::CommandStatus::kOk &&
       result.value.has_value()) {
