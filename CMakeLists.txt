@@ -11,7 +11,7 @@ find_package(Threads REQUIRED)
 add_library(cache_server_lib INTERFACE)
 target_include_directories(cache_server_lib INTERFACE ${PROJECT_SOURCE_DIR}/src)
 
-add_library(cache_core_lib src/core/concurrent_store.cpp)
+add_library(cache_core_lib src/core/concurrent_store.cpp src/core/eviction/slru_lfu_policy.cpp)
 target_include_directories(cache_core_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(cache_core_lib PUBLIC Threads::Threads)
 
@@ -27,3 +27,7 @@ add_test(NAME Bootstrap COMMAND test_bootstrap)
 add_executable(test_concurrent_store tests/core/concurrent_store_test.cpp)
 target_link_libraries(test_concurrent_store PRIVATE gtest_main cache_core_lib)
 add_test(NAME ConcurrentStore COMMAND test_concurrent_store)
+
+add_executable(test_eviction_policy tests/core/eviction_policy_test.cpp)
+target_link_libraries(test_eviction_policy PRIVATE gtest_main cache_core_lib)
+add_test(NAME EvictionPolicy COMMAND test_eviction_policy)
