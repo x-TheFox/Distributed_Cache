@@ -23,14 +23,14 @@ std::string ExecuteCommand(const RESPCommand& cmd,
                            cache::core::ConcurrentStore& store) {
   auto name = ToUpper(cmd.name);
   if (name == "SET") {
-    if (cmd.args.size() < 2) {
+    if (cmd.args.size() != 2) {
       return "-ERR wrong number of arguments\r\n";
     }
     store.Set(cmd.args[0], cmd.args[1], std::nullopt);
     return "+OK\r\n";
   }
   if (name == "GET") {
-    if (cmd.args.empty()) {
+    if (cmd.args.size() != 1) {
       return "-ERR wrong number of arguments\r\n";
     }
     auto value = store.Get(cmd.args[0]);

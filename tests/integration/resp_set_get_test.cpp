@@ -15,3 +15,16 @@ TEST(RESPSetGet, RoundTrip) {
   auto get_response = cache::protocol::resp::ExecuteCommand(get_cmd, store);
   EXPECT_EQ(get_response, "$3\r\nbar\r\n");
 }
+
+TEST(RESPSetGet, RejectsWrongArity) {
+  cache::core::ConcurrentStore store(4);
+  auto set_cmd = cache::protocol::resp::ParseRESP(
+      "*4\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$3\r\nbaz\r\n");
+  auto set_response = cache::protocol::resp::ExecuteCommand(set_cmd, store);
+  EXPECT_EQ(set_response, "-ERR wrong number of arguments\r\n");
+
+  auto get_cmd = cache::protocol::resp::ParseRESP(
+      "*3\r\n$3\r\nGET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n");
+  auto get_response = cache::protocol::resp::ExecuteCommand(get_cmd, store);
+  EXPECT_EQ(get_response, "-ERR wrong number of arguments\r\n");
+}
