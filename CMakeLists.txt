@@ -10,6 +10,9 @@ include(cmake/third_party.cmake)
 add_library(cache_server_lib INTERFACE)
 target_include_directories(cache_server_lib INTERFACE ${PROJECT_SOURCE_DIR}/src)
 
+add_library(cache_core_lib src/core/concurrent_store.cpp)
+target_include_directories(cache_core_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
+
 add_executable(cache_server src/server/main.cpp)
 target_link_libraries(cache_server PRIVATE cache_server_lib)
 
@@ -18,3 +21,7 @@ enable_testing()
 add_executable(test_bootstrap tests/smoke/test_bootstrap.cpp)
 target_link_libraries(test_bootstrap PRIVATE gtest_main cache_server_lib)
 add_test(NAME Bootstrap COMMAND test_bootstrap)
+
+add_executable(test_concurrent_store tests/core/concurrent_store_test.cpp)
+target_link_libraries(test_concurrent_store PRIVATE gtest_main cache_core_lib)
+add_test(NAME ConcurrentStore COMMAND test_concurrent_store)
