@@ -21,13 +21,13 @@ void ConcurrentStore::Set(
 
 std::optional<std::string> ConcurrentStore::Get(const std::string& key) {
   auto& stripe = StripeFor(key);
-  auto now = std::chrono::steady_clock::now();
   {
     std::shared_lock lock(stripe.mu);
     auto it = stripe.map.find(key);
     if (it == stripe.map.end()) {
       return std::nullopt;
     }
+    auto now = std::chrono::steady_clock::now();
     if (!it->second.IsExpired(now)) {
       return it->second.value;
     }
@@ -38,6 +38,7 @@ std::optional<std::string> ConcurrentStore::Get(const std::string& key) {
   if (it == stripe.map.end()) {
     return std::nullopt;
   }
+  auto now = std::chrono::steady_clock::now();
   if (it->second.IsExpired(now)) {
     stripe.map.erase(it);
     return std::nullopt;

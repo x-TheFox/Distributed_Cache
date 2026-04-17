@@ -6,12 +6,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(cmake/third_party.cmake)
+find_package(Threads REQUIRED)
 
 add_library(cache_server_lib INTERFACE)
 target_include_directories(cache_server_lib INTERFACE ${PROJECT_SOURCE_DIR}/src)
 
 add_library(cache_core_lib src/core/concurrent_store.cpp)
 target_include_directories(cache_core_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(cache_core_lib PUBLIC Threads::Threads)
 
 add_executable(cache_server src/server/main.cpp)
 target_link_libraries(cache_server PRIVATE cache_server_lib)
