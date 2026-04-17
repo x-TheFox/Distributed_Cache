@@ -1,13 +1,49 @@
+# Build outputs
 /build/
-/.superpowers/
-/.idea/
-/.vscode/
+**/build/
 *.o
+*.obj
 *.a
 *.so
 *.dylib
+*.dll
+*.exe
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+
+# Logs and coverage
 *.log
+*.out
 *.profraw
 *.profdata
+coverage/
+
+# Package managers / JS
+node_modules/
+.next/
+dist/
+*.tsbuildinfo
+
+# Local/editor artifacts
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Superpowers brainstorming artifacts
+/.superpowers/
+/.worktrees/
+
+# Generated benchmark/docs artifacts
 /bench/out/
 /docs/generated/
+/docs/
+
+# Task 1 guardrails
+/docs/superpowers/
