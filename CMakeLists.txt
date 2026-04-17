@@ -15,6 +15,11 @@ add_library(cache_core_lib src/core/concurrent_store.cpp src/core/eviction/slru_
 target_include_directories(cache_core_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(cache_core_lib PUBLIC Threads::Threads)
 
+add_library(cache_protocol_lib src/protocol/resp/resp_parser.cpp
+                               src/server/command_dispatcher.cpp)
+target_include_directories(cache_protocol_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(cache_protocol_lib PUBLIC cache_core_lib)
+
 add_executable(cache_server src/server/main.cpp)
 target_link_libraries(cache_server PRIVATE cache_server_lib)
 
@@ -31,3 +36,11 @@ add_test(NAME ConcurrentStore COMMAND test_concurrent_store)
 add_executable(test_eviction_policy tests/core/eviction_policy_test.cpp)
 target_link_libraries(test_eviction_policy PRIVATE gtest_main cache_core_lib)
 add_test(NAME EvictionPolicy COMMAND test_eviction_policy)
+
+add_executable(test_resp_parser tests/protocol/resp_parser_test.cpp)
+target_link_libraries(test_resp_parser PRIVATE gtest_main cache_protocol_lib)
+add_test(NAME RESPParser COMMAND test_resp_parser)
+
+add_executable(test_resp_set_get tests/integration/resp_set_get_test.cpp)
+target_link_libraries(test_resp_set_get PRIVATE gtest_main cache_protocol_lib)
+add_test(NAME resp_set_get COMMAND test_resp_set_get)
