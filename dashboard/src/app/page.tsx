@@ -11,6 +11,12 @@ import { LatencyChart } from "@/components/metrics/latency-chart";
 import { MetricCards } from "@/components/metrics/metric-cards";
 import { SimulationTimeline } from "@/components/simulations/simulation-timeline";
 import { TopologyMap, type NodeState, type ShardState } from "@/components/topology/topology-map";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
 import { createClusterSocket } from "@/lib/ws-client";
 
 const defaultSocketUrl = "ws://localhost:8080/ws";
@@ -188,43 +194,43 @@ export default function Page() {
   const p99Ms = percentile(latencySamples, 0.99);
 
   return (
-    <main
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "32px",
-        padding: "32px"
-      }}
-    >
-      <header>
+    <main className="dashboard-shell">
+      <header className="dashboard-header">
         <h1>Cluster Dashboard</h1>
-        <p style={{ margin: 0, color: "#6b7280" }}>
+        <p>
           Live throughput, latency, and replica lag signals.
         </p>
       </header>
-      <section>
-        <h2>Performance</h2>
-        <MetricCards
-          opsPerSec={opsPerSec}
-          p99Ms={p99Ms}
-          replicaLagMs={replicaLagMs}
-        />
-        <div style={{ marginTop: "16px" }}>
-          <LatencyChart values={latencySamples} />
-        </div>
-        <div style={{ marginTop: "16px" }}>
-          <BenchmarkPanel
-            snapshot={benchmarkSnapshot}
-            error={benchmarkError}
+      <section className="section-grid">
+        <Card>
+          <CardHeader>
+            <CardTitle>Performance</CardTitle>
+            <CardDescription>
+              Throughput, latency and replication health for the active cluster.
+            </CardDescription>
+          </CardHeader>
+          <MetricCards
+            opsPerSec={opsPerSec}
+            p99Ms={p99Ms}
+            replicaLagMs={replicaLagMs}
           />
-        </div>
+          <div style={{ marginTop: "16px" }}>
+            <LatencyChart values={latencySamples} />
+          </div>
+          <div style={{ marginTop: "16px" }}>
+            <BenchmarkPanel
+              snapshot={benchmarkSnapshot}
+              error={benchmarkError}
+            />
+          </div>
+        </Card>
       </section>
-      <section>
-        <h2>Cluster Topology</h2>
+      <section className="section-grid">
+        <h2 className="dashboard-section-title">Cluster topology</h2>
         <TopologyMap nodes={nodes} shards={shards} />
       </section>
-      <section>
-        <h2>Failover Simulation</h2>
+      <section className="section-grid">
+        <h2 className="dashboard-section-title">Failover simulation</h2>
         <SimulationTimeline events={simulationEvents} />
       </section>
     </main>

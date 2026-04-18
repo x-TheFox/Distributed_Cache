@@ -17,20 +17,20 @@ type OrderedEvent = {
 };
 
 const timelineContainerStyle: React.CSSProperties = {
-  border: "1px solid #e5e7eb",
+  border: "1px solid #334155",
   borderRadius: "16px",
   padding: "16px",
-  background: "#ffffff",
+  background: "#0f172a",
   display: "flex",
   flexDirection: "column",
   gap: "16px"
 };
 
 const eventCardStyle: React.CSSProperties = {
-  border: "1px solid #e5e7eb",
+  border: "1px solid #334155",
   borderRadius: "12px",
   padding: "12px",
-  background: "#f9fafb"
+  background: "#111c34"
 };
 
 const eventTitle = (event: ClusterEvent) => {
@@ -144,7 +144,7 @@ export function SimulationTimeline({
       <header style={{ display: "flex", justifyContent: "space-between", gap: "16px" }}>
         <div>
           <h3 style={{ margin: 0 }}>Failover playback</h3>
-          <p style={{ margin: 0, color: "#6b7280" }}>
+          <p style={{ margin: 0, color: "#94a3b8" }}>
             Step through replay events to understand failover timing.
           </p>
         </div>
@@ -163,7 +163,7 @@ export function SimulationTimeline({
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             <label
               htmlFor="timeline-position"
-              style={{ fontSize: "0.85rem", color: "#6b7280" }}
+              style={{ fontSize: "0.85rem", color: "#94a3b8" }}
             >
               Timeline position ({activeIndex + 1} of {orderedEvents.length})
             </label>
@@ -182,13 +182,13 @@ export function SimulationTimeline({
             {activeEvent ? (
               <>
                 <div style={{ fontWeight: 600 }}>{eventTitle(activeEvent)}</div>
-                <div style={{ color: "#6b7280" }}>{eventDescription(activeEvent)}</div>
-                <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                <div style={{ color: "#cbd5e1" }}>{eventDescription(activeEvent)}</div>
+                <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
                   Timestamp: {activeEvent.ts}
                 </div>
               </>
             ) : (
-              <div style={{ color: "#6b7280" }}>No event selected.</div>
+              <div style={{ color: "#94a3b8" }}>No event selected.</div>
             )}
           </div>
 
@@ -208,13 +208,13 @@ export function SimulationTimeline({
                   key={`${event.type}-${order}`}
                   style={{
                     ...eventCardStyle,
-                    borderColor: isActive ? "#2563eb" : "#e5e7eb",
-                    background: isActive ? "#eff6ff" : "#f9fafb"
+                    borderColor: isActive ? "#38bdf8" : "#334155",
+                    background: isActive ? "#0b2945" : "#111c34"
                   }}
                 >
                   <div style={{ fontWeight: 600 }}>{eventTitle(event)}</div>
-                  <div style={{ color: "#6b7280" }}>{eventDescription(event)}</div>
-                  <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                  <div style={{ color: "#cbd5e1" }}>{eventDescription(event)}</div>
+                  <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
                     Timestamp: {event.ts}
                   </div>
                 </li>

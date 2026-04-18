@@ -1,0 +1,137 @@
+:root {
+  color-scheme: dark;
+  --bg: #020617;
+  --panel: #0f172a;
+  --panel-alt: #111c34;
+  --border: #1e293b;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --primary: #38bdf8;
+  --danger: #fca5a5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.dashboard-body {
+  min-height: 100vh;
+  background: radial-gradient(circle at top right, #0b1630, var(--bg) 55%);
+}
+
+.dashboard-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 20px 48px;
+}
+
+.dashboard-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dashboard-header h1 {
+  margin: 0;
+  font-size: 2rem;
+  letter-spacing: -0.01em;
+}
+
+.dashboard-header p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.section-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.dashboard-section-title {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #cbd5e1;
+}
+
+.ui-card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--panel), var(--panel-alt));
+  padding: 16px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+}
+
+.ui-card-header {
+  margin: 0 0 12px;
+}
+
+.ui-card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.ui-card-description {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.ui-button {
+  border-radius: 999px;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: var(--text);
+  padding: 6px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ui-button:hover {
+  border-color: #38bdf8;
+}
+
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.ui-badge-ok {
+  background: #052e22;
+  color: #86efac;
+  border-color: #14532d;
+}
+
+.ui-badge-warning {
+  background: #3f2c08;
+  color: #fcd34d;
+  border-color: #92400e;
+}
+
+.ui-badge-danger {
+  background: #3f0f19;
+  color: #fda4af;
+  border-color: #881337;
+}
