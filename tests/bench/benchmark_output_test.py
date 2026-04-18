@@ -33,3 +33,20 @@ def test_benchmark_json_contains_required_fields():
     data = json.loads(BENCH_OUTPUT.read_text())
     for field in ("ops_per_sec", "p99_ms"):
         assert field in data
+
+
+def test_benchmark_matrix_output_has_required_scenarios():
+    _ensure_output()
+    data = json.loads(BENCH_OUTPUT.read_text())
+    names = {s["name"] for s in data["scenarios"]}
+    required = {
+        "read_heavy",
+        "write_heavy",
+        "mixed",
+        "hotspot_churn",
+        "rebalance",
+        "failover",
+        "thundering_herd",
+        "coalescing_ab",
+    }
+    assert required.issubset(names)

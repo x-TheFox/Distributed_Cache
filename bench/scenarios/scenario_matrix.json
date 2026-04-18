@@ -1,0 +1,12 @@
+{
+  "scenarios": [
+    { "name": "read_heavy", "description": "Read-heavy workload" },
+    { "name": "write_heavy", "description": "Write-heavy workload" },
+    { "name": "mixed", "description": "Balanced read/write workload" },
+    { "name": "hotspot_churn", "description": "Hotspot churn under skewed access" },
+    { "name": "rebalance", "description": "Shard rebalance pressure" },
+    { "name": "failover", "description": "Node failover behavior" },
+    { "name": "thundering_herd", "description": "Thundering herd baseline" },
+    { "name": "coalescing_ab", "description": "Coalescing A/B comparison" }
+  ]
+}
