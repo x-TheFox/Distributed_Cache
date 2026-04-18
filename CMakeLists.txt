@@ -16,7 +16,9 @@ find_package(Threads REQUIRED)
 add_library(cache_server_lib INTERFACE)
 target_include_directories(cache_server_lib INTERFACE ${PROJECT_SOURCE_DIR}/src)
 
-add_library(cache_core_lib src/core/concurrent_store.cpp src/core/eviction/slru_lfu_policy.cpp)
+add_library(cache_core_lib src/core/concurrent_store.cpp
+                           src/core/eviction/slru_lfu_policy.cpp
+                           src/core/request_coalescer.cpp)
 target_include_directories(cache_core_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(cache_core_lib PUBLIC Threads::Threads)
 
@@ -32,6 +34,13 @@ target_include_directories(cache_cluster_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
 add_library(cache_replication_lib src/replication/wal_writer.cpp
                                   src/replication/replica_stream.cpp)
 target_include_directories(cache_replication_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
+
+add_library(cache_control_lib src/control/heartbeat_manager.cpp
+                              src/control/raft_metadata_adapter.cpp)
+target_include_directories(cache_control_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
+
+add_library(cache_metrics_lib src/metrics/prometheus_endpoint.cpp)
+target_include_directories(cache_metrics_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
 set(CACHE_PROTO ${PROJECT_SOURCE_DIR}/proto/cache.proto)
 get_filename_component(CACHE_PROTO_PATH ${CACHE_PROTO} PATH)
@@ -103,3 +112,16 @@ add_test(NAME WALReplication COMMAND test_wal_replication)
 add_executable(test_ack_policy tests/replication/ack_mode_test.cpp)
 target_link_libraries(test_ack_policy PRIVATE gtest_main cache_replication_lib)
 add_test(NAME AckPolicy COMMAND test_ack_policy)
+
+add_executable(test_request_coalescer tests/core/request_coalescer_test.cpp)
+target_link_libraries(test_request_coalescer PRIVATE gtest_main cache_core_lib)
+add_test(NAME RequestCoalescer COMMAND test_request_coalescer)
+
+add_executable(test_failover_metadata tests/control/failover_metadata_test.cpp)
+target_link_libraries(test_failover_metadata PRIVATE gtest_main cache_control_lib)
+add_test(NAME FailoverMetadata COMMAND test_failover_metadata)
+
+add_executable(test_prometheus_endpoint tests/metrics/prometheus_endpoint_test.cpp)
+target_link_libraries(test_prometheus_endpoint PRIVATE gtest_main
+                                                      cache_metrics_lib)
+add_test(NAME Prometheus COMMAND test_prometheus_endpoint)
