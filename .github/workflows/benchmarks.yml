@@ -1,0 +1,37 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "bench/**"
+      - "src/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build benchmark
+        run: cmake --build build --target cache_bench --config Release
+
+      - name: Run benchmark
+        run: ./build/bench/cache_bench --out bench/out/latest.json
+
+      - name: Render SVG
+        run: python3 bench/render_svg.py bench/out/latest.json docs/generated/bench.svg
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-artifacts
+          path: |
+            bench/out/latest.json
+            docs/generated/bench.svg

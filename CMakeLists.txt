@@ -73,6 +73,11 @@ target_link_libraries(cache_grpc_lib PUBLIC cache_protocol_lib cache_proto_lib)
 add_executable(cache_server src/server/main.cpp)
 target_link_libraries(cache_server PRIVATE cache_server_lib)
 
+add_executable(cache_bench bench/cache_bench.cpp)
+target_link_libraries(cache_bench PRIVATE cache_core_lib)
+set_target_properties(cache_bench PROPERTIES
+                      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bench")
+
 enable_testing()
 
 add_executable(test_bootstrap tests/smoke/test_bootstrap.cpp)
