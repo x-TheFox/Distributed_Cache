@@ -29,8 +29,21 @@ std::string RaftMetadataAdapter::LeaderForShard(
   return found->second.leader;
 }
 
-void RaftMetadataAdapter::OnHeartbeatTimeout(const std::string& node_id) {
-  heartbeat_.OnHeartbeatTimeout(node_id);
+void RaftMetadataAdapter::OnHeartbeatTimeout(const std::string& node_id,
+                                             uint64_t timeout_ms) {
+  heartbeat_.OnHeartbeatTimeout(node_id, timeout_ms);
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (auto& [shard_id, shard] : shards_) {
+    if (!shard.leader.empty() && heartbeat_.IsAlive(shard.leader)) {
+      continue;
+    }
+    ElectLeaderIfNeeded(shard);
+  }
+}
+
+void RaftMetadataAdapter::IngestGossip(
+    const std::vector<NodeHealth>& observations) {
+  heartbeat_.IngestGossip(observations);
   std::lock_guard<std::mutex> lock(mutex_);
   for (auto& [shard_id, shard] : shards_) {
     if (!shard.leader.empty() && heartbeat_.IsAlive(shard.leader)) {

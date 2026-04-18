@@ -16,7 +16,8 @@ class RaftMetadataAdapter {
   void AddShard(const std::string& shard_id,
                 const std::vector<std::string>& replicas);
   std::string LeaderForShard(const std::string& shard_id) const;
-  void OnHeartbeatTimeout(const std::string& node_id);
+  void OnHeartbeatTimeout(const std::string& node_id, uint64_t timeout_ms);
+  void IngestGossip(const std::vector<NodeHealth>& observations);
   std::optional<NodeHealth> GetNodeHealth(const std::string& node_id) const;
 
  private:

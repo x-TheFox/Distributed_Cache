@@ -18,7 +18,7 @@ class HeartbeatManager {
  public:
   void RegisterNode(const std::string& node_id, uint64_t heartbeat_ms = 0);
   void RecordHeartbeat(const std::string& node_id, uint64_t heartbeat_ms);
-  void OnHeartbeatTimeout(const std::string& node_id);
+  void OnHeartbeatTimeout(const std::string& node_id, uint64_t timeout_ms);
   void IngestGossip(const std::vector<NodeHealth>& observations);
 
   std::optional<NodeHealth> GetNodeHealth(const std::string& node_id) const;
@@ -28,5 +28,6 @@ class HeartbeatManager {
  private:
   mutable std::mutex mutex_;
   std::unordered_map<std::string, NodeHealth> nodes_;
+  std::unordered_map<std::string, uint64_t> last_observation_ms_;
 };
 }  // namespace cache::control

@@ -31,4 +31,30 @@ TEST(HeartbeatManager, IngestGossipPrefersNewerObservation) {
   EXPECT_FALSE(health->alive);
   EXPECT_EQ(health->last_heartbeat_ms, 250u);
 }
+
+TEST(HeartbeatManager, TimeoutBlocksStaleGossipRevival) {
+  HeartbeatManager manager;
+  manager.RegisterNode("node-a", 100);
+
+  manager.OnHeartbeatTimeout("node-a", 150);
+  manager.IngestGossip({NodeHealth{"node-a", true, 120}});
+
+  auto health = manager.GetNodeHealth("node-a");
+  ASSERT_TRUE(health.has_value());
+  EXPECT_FALSE(health->alive);
+  EXPECT_EQ(health->last_heartbeat_ms, 100u);
+}
+
+TEST(HeartbeatManager, TimeoutAllowsFreshGossipRevival) {
+  HeartbeatManager manager;
+  manager.RegisterNode("node-a", 100);
+
+  manager.OnHeartbeatTimeout("node-a", 150);
+  manager.IngestGossip({NodeHealth{"node-a", true, 200}});
+
+  auto health = manager.GetNodeHealth("node-a");
+  ASSERT_TRUE(health.has_value());
+  EXPECT_TRUE(health->alive);
+  EXPECT_EQ(health->last_heartbeat_ms, 200u);
+}
 }  // namespace cache::control
