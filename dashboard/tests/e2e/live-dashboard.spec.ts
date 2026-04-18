@@ -60,6 +60,9 @@ test("live dashboard updates from websocket stream", async ({ page }) => {
   await page.goto("http://localhost:3000");
 
   await page.waitForFunction(() => (window as any).__mockSockets?.length > 0);
+  const replicaCard = page.locator("article", { hasText: "Replica Lag" });
+  const replicaValue = replicaCard.locator("div").nth(1);
+  await expect(replicaValue).toHaveText("8 ms");
   await page.evaluate(() => {
     const socket = (window as any).__mockSockets[0];
     socket.__emitMessage(
@@ -72,6 +75,5 @@ test("live dashboard updates from websocket stream", async ({ page }) => {
     );
   });
 
-  const replicaCard = page.locator("article", { hasText: "Replica Lag" });
-  await expect(replicaCard).toContainText("42 ms");
+  await expect(replicaValue).toHaveText("42 ms");
 });

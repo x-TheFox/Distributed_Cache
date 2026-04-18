@@ -80,7 +80,7 @@ void ConcurrentStore::EnforceCapacity() {
   }
 
   total_entries = total_entries_.load(std::memory_order_relaxed);
-  if (total_entries < max_entries_) {
+  if (total_entries <= max_entries_) {
     return;
   }
 

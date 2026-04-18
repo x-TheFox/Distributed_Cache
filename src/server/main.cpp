@@ -31,7 +31,6 @@ constexpr size_t kMaxRespFrameBytes = 1024 * 1024;
 constexpr int kListenBacklog = 64;
 constexpr int kSelectTimeoutMs = 200;
 constexpr int kSocketTimeoutMs = 200;
-constexpr int kRespIdleTimeoutMs = 2000;
 constexpr int kMaxPort = 65535;
 
 std::atomic<bool>* g_stop_flag = nullptr;
@@ -98,6 +97,27 @@ bool ParseStringFlag(std::string_view arg, std::string_view prefix,
   return true;
 }
 
+bool TryAcquireRespSlot(std::atomic<int>& active, int max_clients) {
+  if (max_clients <= 0) {
+    return true;
+  }
+  int current = active.load(std::memory_order_relaxed);
+  while (true) {
+    if (current >= max_clients) {
+      return false;
+    }
+    if (active.compare_exchange_weak(current, current + 1,
+                                     std::memory_order_acq_rel,
+                                     std::memory_order_relaxed)) {
+      return true;
+    }
+  }
+}
+
+void ReleaseRespSlot(std::atomic<int>& active) {
+  active.fetch_sub(1, std::memory_order_acq_rel);
+}
+
 struct RuntimeOptions {
   cache::server::NodeConfig config{cache::server::NodeConfig::Default()};
   bool dry_run{false};
@@ -130,6 +150,10 @@ std::optional<RuntimeOptions> ParseArgs(int argc, char** argv) {
       options.config.virtual_nodes = value;
       continue;
     }
+    if (ParseIntFlag(arg, "--max-resp-clients=", &value)) {
+      options.config.max_resp_clients = value;
+      continue;
+    }
     if (ParseIntFlag(arg, "--listen-port=", &value) ||
         ParseIntFlag(arg, "--resp-port=", &value)) {
       options.config.listen_port = value;
@@ -141,6 +165,17 @@ std::optional<RuntimeOptions> ParseArgs(int argc, char** argv) {
     }
     if (ParseIntFlag(arg, "--metrics-port=", &value)) {
       options.config.metrics_port = value;
+      continue;
+    }
+    std::chrono::milliseconds resp_idle_timeout{};
+    if (ParseDurationFlag(arg, "--resp-idle-timeout-ms=", &resp_idle_timeout)) {
+      if (resp_idle_timeout.count() >
+          std::numeric_limits<int>::max()) {
+        std::cerr << "resp-idle-timeout-ms out of range\n";
+        return std::nullopt;
+      }
+      options.config.resp_idle_timeout_ms =
+          static_cast<int>(resp_idle_timeout.count());
       continue;
     }
     std::string text_value;
@@ -160,6 +195,14 @@ std::optional<RuntimeOptions> ParseArgs(int argc, char** argv) {
       !PortInRange(options.config.grpc_port) ||
       !PortInRange(options.config.metrics_port)) {
     std::cerr << "Ports must be between 0 and 65535\n";
+    return std::nullopt;
+  }
+  if (options.config.max_resp_clients <= 0) {
+    std::cerr << "max-resp-clients must be positive\n";
+    return std::nullopt;
+  }
+  if (options.config.resp_idle_timeout_ms <= 0) {
+    std::cerr << "resp-idle-timeout-ms must be positive\n";
     return std::nullopt;
   }
   if (options.config.node_id.empty()) {
@@ -223,8 +266,9 @@ bool SendAll(int fd, std::string_view payload) {
 }
 
 void HandleRespClient(int client_fd, cache::core::ConcurrentStore& store,
-                      cache::metrics::PrometheusEndpoint& metrics,
-                      std::atomic<bool>& stop) {
+                       cache::metrics::PrometheusEndpoint& metrics,
+                       std::atomic<bool>& stop,
+                       std::chrono::milliseconds idle_timeout) {
   ApplySocketTimeout(client_fd);
   std::string buffer;
   buffer.reserve(1024);
@@ -241,8 +285,7 @@ void HandleRespClient(int client_fd, cache::core::ConcurrentStore& store,
       }
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         auto now = std::chrono::steady_clock::now();
-        if (now - last_activity >
-            std::chrono::milliseconds(kRespIdleTimeoutMs)) {
+        if (now - last_activity > idle_timeout) {
           return;
         }
         continue;
@@ -281,9 +324,12 @@ void RequestStop(std::atomic<bool>& stop, std::condition_variable& stop_cv) {
 }
 
 void RunRespServer(int port, cache::core::ConcurrentStore& store,
-                   cache::metrics::PrometheusEndpoint& metrics,
-                   std::atomic<bool>& stop, std::atomic<bool>& failed,
-                   std::condition_variable& stop_cv) {
+                    cache::metrics::PrometheusEndpoint& metrics,
+                    int max_resp_clients,
+                    std::chrono::milliseconds resp_idle_timeout,
+                    std::atomic<int>& active_resp_clients,
+                    std::atomic<bool>& stop, std::atomic<bool>& failed,
+                    std::condition_variable& stop_cv) {
   int bound_port = 0;
   int server_fd = CreateListeningSocket(port, &bound_port);
   if (server_fd < 0) {
@@ -317,9 +363,17 @@ void RunRespServer(int port, cache::core::ConcurrentStore& store,
     if (client_fd < 0) {
       continue;
     }
-    std::thread([client_fd, &store, &metrics, &stop]() {
-      HandleRespClient(client_fd, store, metrics, stop);
+    if (!TryAcquireRespSlot(active_resp_clients, max_resp_clients)) {
+      ApplySocketTimeout(client_fd);
+      SendAll(client_fd, "-ERR max clients reached\r\n");
       ::close(client_fd);
+      continue;
+    }
+    std::thread([client_fd, &store, &metrics, &stop, resp_idle_timeout,
+                 &active_resp_clients]() {
+      HandleRespClient(client_fd, store, metrics, stop, resp_idle_timeout);
+      ::close(client_fd);
+      ReleaseRespSlot(active_resp_clients);
     }).detach();
   }
   ::close(server_fd);
@@ -407,6 +461,7 @@ int main(int argc, char** argv) {
 
   std::atomic<bool> stop{false};
   std::atomic<bool> listener_failed{false};
+  std::atomic<int> active_resp_clients{0};
   std::mutex stop_mutex;
   std::condition_variable stop_cv;
   g_stop_flag = &stop;
@@ -427,8 +482,11 @@ int main(int argc, char** argv) {
   }
 
   std::thread resp_thread([&]() {
-    RunRespServer(options->config.listen_port, store, metrics, stop,
-                  listener_failed, stop_cv);
+    RunRespServer(
+        options->config.listen_port, store, metrics,
+        options->config.max_resp_clients,
+        std::chrono::milliseconds(options->config.resp_idle_timeout_ms),
+        active_resp_clients, stop, listener_failed, stop_cv);
   });
   std::thread metrics_thread([&]() {
     RunMetricsServer(options->config.metrics_port, metrics, stop,
