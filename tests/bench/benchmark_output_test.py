@@ -13,7 +13,9 @@ BENCH_WORKFLOW = ROOT / ".github/workflows/benchmarks.yml"
 MIN_SCENARIO_REQUESTS = 1_000_000
 
 
-def _run_bench(check: bool = True) -> subprocess.CompletedProcess[str]:
+def _run_bench(
+    extra_args: list[str] | None = None, check: bool = True
+) -> subprocess.CompletedProcess[str]:
     if not BENCH_BIN.exists():
         pytest.fail(
             "Benchmark output missing. Build cache_bench and run it to generate "
@@ -22,16 +24,19 @@ def _run_bench(check: bool = True) -> subprocess.CompletedProcess[str]:
     BENCH_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     if BENCH_OUTPUT.exists():
         BENCH_OUTPUT.unlink()
+    args = [str(BENCH_BIN), "--out", str(BENCH_OUTPUT)]
+    if extra_args:
+        args.extend(extra_args)
     return subprocess.run(
-        [str(BENCH_BIN), "--out", str(BENCH_OUTPUT)],
+        args,
         check=check,
         capture_output=True,
         text=True,
     )
 
 
-def _load_output() -> dict:
-    _run_bench(check=True)
+def _load_output(extra_args: list[str] | None = None) -> dict:
+    _run_bench(extra_args=extra_args, check=True)
     return json.loads(BENCH_OUTPUT.read_text())
 
 
@@ -119,23 +124,17 @@ def test_benchmark_matrix_output_has_required_scenarios():
             BENCH_OUTPUT.unlink()
 
 
-def test_benchmark_output_preserves_matrix_requests():
+def test_benchmark_output_uses_ops_total_for_requests():
     original = SCENARIO_MATRIX.read_text()
     matrix = _load_matrix()
-    overrides = {
-        "read_heavy": MIN_SCENARIO_REQUESTS + 5000,
-        "write_heavy": MIN_SCENARIO_REQUESTS + 9000,
-    }
     for scenario in matrix["scenarios"]:
-        name = scenario.get("name")
-        if name in overrides:
-            scenario["requests"] = overrides[name]
+        scenario["requests"] = MIN_SCENARIO_REQUESTS + 4242
     SCENARIO_MATRIX.write_text(json.dumps(matrix, indent=2))
     try:
-        data = _load_output()
-        scenarios = {s["name"]: s for s in data["scenarios"]}
-        for name, requests in overrides.items():
-            assert scenarios[name]["requests"] == requests
+        data = _load_output(extra_args=["--ops", "5000"])
+        assert data["ops_total"] == 5000
+        for scenario in data["scenarios"]:
+            assert scenario["requests"] == data["ops_total"]
     finally:
         SCENARIO_MATRIX.write_text(original)
         if BENCH_OUTPUT.exists():

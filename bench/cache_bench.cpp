@@ -699,7 +699,7 @@ int main(int argc, char** argv) {
     }
     scenario_results.push_back(
         {name,
-         spec.requests,
+         config.ops,
          ops_per_sec,
          p50,
          p99,

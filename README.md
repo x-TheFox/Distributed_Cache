@@ -83,8 +83,8 @@ python3 bench/render_svg.py bench/out/latest.json docs/generated/bench.svg
 ## Mega-Spec verification gates
 
 - Benchmark scenario matrix includes a per-scenario request count (>= 1,000,000),
-  and benchmark JSON emits that `requests` total per scenario (see
-  `tests/bench/benchmark_output_test.py`).
+  and benchmark JSON emits the actual `requests` total executed per scenario
+  (see `tests/bench/benchmark_output_test.py`).
 - Live dashboard E2E asserts Source: LIVE badge visibility and replica lag units
   in milliseconds (see `dashboard/tests/e2e/live-dashboard.spec.ts`).
 
