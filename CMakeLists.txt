@@ -29,6 +29,10 @@ add_library(cache_cluster_lib src/cluster/hash_ring.cpp
                               src/cluster/shard_router.cpp)
 target_include_directories(cache_cluster_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
 
+add_library(cache_replication_lib src/replication/wal_writer.cpp
+                                  src/replication/replica_stream.cpp)
+target_include_directories(cache_replication_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
+
 set(CACHE_PROTO ${PROJECT_SOURCE_DIR}/proto/cache.proto)
 get_filename_component(CACHE_PROTO_PATH ${CACHE_PROTO} PATH)
 set(CACHE_PROTO_SRCS ${CMAKE_CURRENT_BINARY_DIR}/cache.pb.cc)
@@ -90,3 +94,12 @@ add_test(NAME GRPCCacheService COMMAND test_grpc_cache_service)
 add_executable(test_hash_ring tests/cluster/hash_ring_test.cpp)
 target_link_libraries(test_hash_ring PRIVATE gtest_main cache_cluster_lib)
 add_test(NAME HashRing COMMAND test_hash_ring)
+
+add_executable(test_wal_replication tests/replication/wal_replication_test.cpp)
+target_link_libraries(test_wal_replication PRIVATE gtest_main
+                                                   cache_replication_lib)
+add_test(NAME WALReplication COMMAND test_wal_replication)
+
+add_executable(test_ack_policy tests/replication/ack_mode_test.cpp)
+target_link_libraries(test_ack_policy PRIVATE gtest_main cache_replication_lib)
+add_test(NAME AckPolicy COMMAND test_ack_policy)
