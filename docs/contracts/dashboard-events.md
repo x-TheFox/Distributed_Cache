@@ -47,19 +47,19 @@ same event types for the failover simulation timeline.
 ## Source diagnostics + simulation surfaces
 
 The dashboard highlights which data source is active (`LIVE/MOCK`) and enumerates
-health for the supporting diagnostics feeds.
+health for the supporting diagnostics feeds. The `NEXT_PUBLIC_DASHBOARD_SOURCE`
+flag currently only updates the badge text; it does not switch data ingestion
+unless backend/source toggle logic is introduced.
 
-### WebSocket stream (LIVE)
+### WebSocket stream (telemetry)
 
-- Source badge reads `LIVE`.
 - `ClusterEvent` payloads stream from `ws://localhost:8080/ws` (override via
-  `NEXT_PUBLIC_CLUSTER_WS_URL`).
+  `NEXT_PUBLIC_CLUSTER_WS_URL`) for live health panels.
 
-### Mock event replay (MOCK)
+### Mock event replay (simulation timeline)
 
-- Source badge reads `MOCK`.
 - `GET /api/mock-events` returns an ordered array of `ClusterEvent` payloads used
-  by the failover timeline and demo playback.
+  by the failover timeline and demo playback, independent of the source badge.
 
 ### Scenario catalog
 
@@ -69,6 +69,9 @@ health for the supporting diagnostics feeds.
 {
   "scenarios": [
     { "id": "thundering_herd", "label": "Thundering Herd" },
+    { "id": "failover", "label": "Node Failover" },
+    { "id": "hotspot_churn", "label": "Hotspot Churn" },
+    { "id": "rebalance", "label": "Shard Rebalance" },
     { "id": "coalescing_ab", "label": "Coalescing A/B", "plugin": "herd-lab" }
   ]
 }

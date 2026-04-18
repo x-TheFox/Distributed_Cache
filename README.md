@@ -36,10 +36,11 @@ suitable for portfolio demonstration.
 
 ## Live/MOCK diagnostics
 
-The dashboard header surfaces a **Source** badge that reads `LIVE/MOCK` to make
-it explicit whether telemetry is streaming from the cluster or from deterministic
-demo data. Use `NEXT_PUBLIC_DASHBOARD_SOURCE=MOCK` for rehearsals, and override
-`NEXT_PUBLIC_CLUSTER_WS_URL` to point at a different WebSocket stream.
+The dashboard header surfaces a **Source** badge that reads `LIVE/MOCK` to label
+the expected telemetry source. `NEXT_PUBLIC_DASHBOARD_SOURCE=MOCK` currently only
+changes the badge text (it does not switch ingestion). Live panels still read
+from `NEXT_PUBLIC_CLUSTER_WS_URL`, and the simulation timeline always uses
+`/api/mock-events` and `/api/scenarios` unless backend source switching is added.
 
 Diagnostics surfaced in the connection health panel:
 
