@@ -543,6 +543,53 @@ bool ParseScenarioMatrix(std::string_view contents, size_t default_requests,
   return reader.AtEnd();
 }
 
+bool SumScenarioRequests(const std::vector<ScenarioSpec>& scenarios,
+                         size_t& total) {
+  total = 0;
+  for (const auto& scenario : scenarios) {
+    if (scenario.requests >
+        (std::numeric_limits<size_t>::max() - total)) {
+      return false;
+    }
+    total += scenario.requests;
+  }
+  return true;
+}
+
+std::vector<size_t> DistributeScenarioRequests(
+    const std::vector<ScenarioSpec>& scenarios, size_t total_ops) {
+  std::vector<size_t> requests(scenarios.size(), 0);
+  if (scenarios.empty()) {
+    return requests;
+  }
+  size_t weight_sum = 0;
+  for (const auto& scenario : scenarios) {
+    weight_sum += scenario.requests;
+  }
+  if (weight_sum == 0) {
+    size_t base = total_ops / scenarios.size();
+    size_t remainder = total_ops % scenarios.size();
+    for (size_t i = 0; i < scenarios.size(); ++i) {
+      requests[i] = base + (i < remainder ? 1 : 0);
+    }
+    return requests;
+  }
+  size_t allocated = 0;
+  for (size_t i = 0; i < scenarios.size(); ++i) {
+    long double share =
+        (static_cast<long double>(total_ops) *
+         static_cast<long double>(scenarios[i].requests)) /
+        static_cast<long double>(weight_sum);
+    requests[i] = static_cast<size_t>(share);
+    allocated += requests[i];
+  }
+  size_t remainder = total_ops - allocated;
+  for (size_t i = 0; i < remainder; ++i) {
+    requests[i % scenarios.size()] += 1;
+  }
+  return requests;
+}
+
 ScenarioMatrixResult LoadScenarioMatrix(const fs::path& path,
                                         size_t default_requests) {
   ScenarioMatrixResult result;
@@ -590,6 +637,7 @@ void PrintUsage(const char* name) {
 int main(int argc, char** argv) {
   Config config;
   std::string out_path = "bench/out/latest.json";
+  bool ops_override = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -597,6 +645,7 @@ int main(int argc, char** argv) {
       out_path = argv[++i];
     } else if (arg == "--ops" && i + 1 < argc) {
       config.ops = static_cast<size_t>(std::stoull(argv[++i]));
+      ops_override = true;
     } else if (arg == "--keys" && i + 1 < argc) {
       config.key_space = static_cast<size_t>(std::stoull(argv[++i]));
     } else if (arg == "--read-ratio" && i + 1 < argc) {
@@ -611,10 +660,39 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (config.ops == 0 || config.key_space == 0 || config.read_ratio < 0.0 ||
+  if (config.key_space == 0 || config.read_ratio < 0.0 ||
       config.read_ratio > 1.0) {
     std::cerr << "Invalid benchmark configuration." << '\n';
     return 1;
+  }
+
+  const fs::path matrix_path = fs::path("bench/scenarios/scenario_matrix.json");
+  ScenarioMatrixResult scenario_matrix =
+      LoadScenarioMatrix(matrix_path, config.ops);
+  if (!scenario_matrix.error.empty()) {
+    std::cerr << scenario_matrix.error << '\n';
+    return 1;
+  }
+  const std::vector<ScenarioSpec>& scenario_specs = scenario_matrix.scenarios;
+  std::vector<size_t> scenario_requests;
+  scenario_requests.reserve(scenario_specs.size());
+  if (ops_override) {
+    if (config.ops == 0) {
+      std::cerr << "Invalid benchmark configuration." << '\n';
+      return 1;
+    }
+    scenario_requests = DistributeScenarioRequests(scenario_specs, config.ops);
+  } else {
+    size_t total_requests = 0;
+    if (!SumScenarioRequests(scenario_specs, total_requests) ||
+        total_requests == 0) {
+      std::cerr << "Invalid benchmark configuration." << '\n';
+      return 1;
+    }
+    config.ops = total_requests;
+    for (const auto& spec : scenario_specs) {
+      scenario_requests.push_back(spec.requests);
+    }
   }
 
   ConcurrentStore store(config.stripes, config.key_space * 2);
@@ -676,17 +754,10 @@ int main(int argc, char** argv) {
       MeasureCoalescingBehavior(true, coalescing_bursts,
                                 coalescing_concurrency);
 
-  const fs::path matrix_path = fs::path("bench/scenarios/scenario_matrix.json");
-  ScenarioMatrixResult scenario_matrix =
-      LoadScenarioMatrix(matrix_path, config.ops);
-  if (!scenario_matrix.error.empty()) {
-    std::cerr << scenario_matrix.error << '\n';
-    return 1;
-  }
-  const std::vector<ScenarioSpec>& scenario_specs = scenario_matrix.scenarios;
   std::vector<ScenarioResult> scenario_results;
   scenario_results.reserve(scenario_specs.size());
-  for (const auto& spec : scenario_specs) {
+  for (size_t i = 0; i < scenario_specs.size(); ++i) {
+    const auto& spec = scenario_specs[i];
     const auto& name = spec.name;
     double coalescing_hit_ratio = 0.0;
     double duplicate_backend_hits = 0.0;
@@ -699,7 +770,7 @@ int main(int argc, char** argv) {
     }
     scenario_results.push_back(
         {name,
-         config.ops,
+         scenario_requests[i],
          ops_per_sec,
          p50,
          p99,

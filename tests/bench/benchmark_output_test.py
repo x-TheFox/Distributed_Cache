@@ -93,6 +93,12 @@ def test_benchmark_scenario_requests_meet_minimum_threshold():
         ), f"Scenario {scenario.get('name', '<unknown>')} below request threshold"
 
 
+def test_benchmark_scenario_requests_sum_to_ops_total():
+    data = _load_output()
+    total_requests = sum(scenario["requests"] for scenario in data["scenarios"])
+    assert total_requests == data["ops_total"]
+
+
 def test_benchmark_matrix_requires_request_thresholds():
     matrix = _load_matrix()
     for scenario in matrix["scenarios"]:
@@ -133,8 +139,8 @@ def test_benchmark_output_uses_ops_total_for_requests():
     try:
         data = _load_output(extra_args=["--ops", "5000"])
         assert data["ops_total"] == 5000
-        for scenario in data["scenarios"]:
-            assert scenario["requests"] == data["ops_total"]
+        total_requests = sum(scenario["requests"] for scenario in data["scenarios"])
+        assert total_requests == data["ops_total"]
     finally:
         SCENARIO_MATRIX.write_text(original)
         if BENCH_OUTPUT.exists():
