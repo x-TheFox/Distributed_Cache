@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import RootLayout from "@/app/layout";
 import { MetricCards } from "@/components/metrics/metric-cards";
 
 describe("MetricCards", () => {
@@ -26,6 +27,11 @@ describe("MetricCards", () => {
     );
     expect(within(container).getByText(/180000/)).toBeInTheDocument();
     expect(within(container).getByText(/2.3 ms/)).toBeInTheDocument();
+  });
+
+  it("renders dashboard shell with dark mode baseline class", () => {
+    const htmlElement = RootLayout({ children: <div /> });
+    expect(htmlElement.props.className).toMatch(/dark/);
   });
 
   it("marks metrics ok at thresholds", () => {

@@ -35,7 +35,7 @@ export function LatencyChart({ values, width = 320, height = 120 }: LatencyChart
         <polyline
           points={points}
           fill="none"
-          stroke="#2563eb"
+          stroke="#38bdf8"
           strokeWidth="2"
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -44,11 +44,11 @@ export function LatencyChart({ values, width = 320, height = 120 }: LatencyChart
           cx={(safeValues.length - 1) * step}
           cy={height - ((safeValues[safeValues.length - 1] - min) / range) * height}
           r="3"
-          fill="#2563eb"
+          fill="#38bdf8"
         />
       </svg>
-      <figcaption style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-        Latency trend (ms) • latest {lastValue}
+      <figcaption style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
+        Latency trend (ms) - latest {lastValue}
       </figcaption>
     </figure>
   );

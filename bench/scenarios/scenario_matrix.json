@@ -1,0 +1,14 @@
+{
+  "scenarios": [
+    { "name": "read_heavy", "description": "Read-heavy workload", "requests": 1000000 },
+    { "name": "write_heavy", "description": "Write-heavy workload", "requests": 1000000 },
+    { "name": "mixed", "description": "Balanced read/write workload", "requests": 1000000 },
+    { "name": "hotspot_churn", "description": "Hotspot churn under skewed access", "requests": 1000000 },
+    { "name": "rebalance", "description": "Shard rebalance pressure", "requests": 1000000 },
+    { "name": "failover", "description": "Node failover behavior", "requests": 1000000 },
+    { "name": "thundering_herd", "description": "Thundering herd baseline", "requests": 1000000 },
+    { "name": "coalescing_off", "description": "Coalescing disabled", "requests": 1000000 },
+    { "name": "coalescing_on", "description": "Coalescing enabled", "requests": 1000000 },
+    { "name": "coalescing_ab", "description": "Coalescing A/B comparison", "requests": 1000000 }
+  ]
+}

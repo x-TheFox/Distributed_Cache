@@ -4,14 +4,27 @@ type ClusterSocket = {
   close: () => void;
 };
 
+type SocketStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
+
+type ClusterSocketOptions = {
+  onStatusChange?: (status: SocketStatus) => void;
+};
+
 const hasWebSocket = (): boolean =>
   typeof window !== "undefined" && typeof WebSocket !== "undefined";
 
 export function createClusterSocket(
   url: string,
-  onEvent: (event: ClusterEvent) => void
+  onEvent: (event: ClusterEvent) => void,
+  options: ClusterSocketOptions = {}
 ): ClusterSocket {
+  const { onStatusChange } = options;
+  const updateStatus = (status: SocketStatus) => {
+    onStatusChange?.(status);
+  };
+
   if (!hasWebSocket()) {
+    updateStatus("disconnected");
     return { close: () => undefined };
   }
 
@@ -75,6 +88,8 @@ export function createClusterSocket(
       return;
     }
 
+    updateStatus("connecting");
+
     const ws = new WebSocket(url);
     socket = ws;
 
@@ -83,6 +98,7 @@ export function createClusterSocket(
         return;
       }
       backoffMs = 1000;
+      updateStatus("connected");
       scheduleHeartbeat(ws);
     });
     ws.addEventListener("message", handleMessage(ws));
@@ -91,6 +107,11 @@ export function createClusterSocket(
         return;
       }
       clearTimers();
+      if (closed) {
+        updateStatus("disconnected");
+        return;
+      }
+      updateStatus("reconnecting");
       scheduleReconnect();
     });
     ws.addEventListener("error", () => {
@@ -124,6 +145,7 @@ export function createClusterSocket(
       closed = true;
       clearTimers();
       socket?.close();
+      updateStatus("disconnected");
     }
   };
 }

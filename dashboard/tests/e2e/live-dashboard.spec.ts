@@ -59,10 +59,21 @@ test("live dashboard updates from websocket stream", async ({ page }) => {
 
   await page.goto("http://localhost:3000");
 
+  const header = page.locator("header.dashboard-header");
+  await expect(header.getByText("Source:")).toBeVisible();
+  await expect(header.getByText("LIVE", { exact: true })).toBeVisible();
+
+  const healthPanel = page.getByRole("region", { name: /Connection health/i });
+  await expect(healthPanel).toBeVisible();
+  await expect(healthPanel.getByText("WebSocket", { exact: true })).toBeVisible();
+  await expect(healthPanel.getByText("Connected")).toBeVisible();
+  await expect(healthPanel.getByText("Last event: Awaiting events")).toBeVisible();
+
   await page.waitForFunction(() => (window as any).__mockSockets?.length > 0);
   const replicaCard = page.locator("article", { hasText: "Replica Lag" });
   const replicaValue = replicaCard.locator("div").nth(1);
   await expect(replicaValue).toHaveText("8 ms");
+  await expect(replicaValue).toHaveText(/^\d+\s*ms$/);
   await page.evaluate(() => {
     const socket = (window as any).__mockSockets[0];
     socket.__emitMessage(
@@ -76,4 +87,6 @@ test("live dashboard updates from websocket stream", async ({ page }) => {
   });
 
   await expect(replicaValue).toHaveText("42 ms");
+  await expect(replicaValue).toHaveText(/^\d+\s*ms$/);
+  await expect(healthPanel.getByText("Last event: 123456")).toBeVisible();
 });

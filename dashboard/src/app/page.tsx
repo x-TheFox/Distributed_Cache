@@ -4,13 +4,25 @@ import { useEffect, useState } from "react";
 
 import { parseClusterEvent, type ClusterEvent } from "@/contracts/cluster-events";
 import {
+  ConnectionHealthPanel,
+  type HealthStatus,
+  type SocketStatus
+} from "@/components/health/connection-health-panel";
+import {
   BenchmarkPanel,
   type BenchmarkSnapshot
 } from "@/components/metrics/benchmark-panel";
 import { LatencyChart } from "@/components/metrics/latency-chart";
 import { MetricCards } from "@/components/metrics/metric-cards";
 import { SimulationTimeline } from "@/components/simulations/simulation-timeline";
+import { SourceBadge } from "@/components/source/source-badge";
 import { TopologyMap, type NodeState, type ShardState } from "@/components/topology/topology-map";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
 import { createClusterSocket } from "@/lib/ws-client";
 
 const defaultSocketUrl = "ws://localhost:8080/ws";
@@ -52,13 +64,19 @@ const percentile = (values: number[], ratio: number) => {
 export default function Page() {
   const [nodes, setNodes] = useState<NodeState[]>([]);
   const [shards, setShards] = useState<ShardState[]>([]);
+  const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
+  const [lastEventAt, setLastEventAt] = useState<number | null>(null);
   const [replicaLagMs, setReplicaLagMs] = useState(8);
   const [opsPerSec, setOpsPerSec] = useState(defaultOpsPerSec);
   const [latencySamples, setLatencySamples] = useState(defaultLatencySamples);
   const [simulationEvents, setSimulationEvents] = useState<ClusterEvent[]>([]);
+  const [simulationStatus, setSimulationStatus] =
+    useState<HealthStatus>("loading");
   const [benchmarkSnapshot, setBenchmarkSnapshot] =
     useState<BenchmarkSnapshot | null>(null);
   const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
+  const socketUrl =
+    process.env.NEXT_PUBLIC_CLUSTER_WS_URL ?? defaultSocketUrl;
 
   useEffect(() => {
     let cancelled = false;
@@ -66,14 +84,23 @@ export default function Page() {
 
     const loadSimulationEvents = async () => {
       try {
+        if (!cancelled) {
+          setSimulationStatus("loading");
+        }
         const response = await fetch("/api/mock-events", {
           signal: controller.signal
         });
         if (!response.ok) {
+          if (!cancelled) {
+            setSimulationStatus("error");
+          }
           return;
         }
         const payload = await response.json();
         if (!Array.isArray(payload)) {
+          if (!cancelled) {
+            setSimulationStatus("error");
+          }
           return;
         }
         const events: ClusterEvent[] = [];
@@ -86,9 +113,12 @@ export default function Page() {
         }
         if (!cancelled) {
           setSimulationEvents(events);
+          setSimulationStatus("healthy");
         }
       } catch {
-        // Ignore network errors during startup.
+        if (!cancelled) {
+          setSimulationStatus("error");
+        }
       }
     };
 
@@ -139,92 +169,147 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    const socketUrl =
-      process.env.NEXT_PUBLIC_CLUSTER_WS_URL ?? defaultSocketUrl;
-
-    const socket = createClusterSocket(socketUrl, (event: ClusterEvent) => {
-      setOpsPerSec(opsPerSecFromEvent(event));
-      setLatencySamples((prev) => {
-        const next = [...prev, latencySampleFromEvent(event)];
-        return next.slice(-maxLatencySamples);
-      });
-
-      if (event.type === "node_heartbeat") {
-        setNodes((prev) => {
-          const index = prev.findIndex((node) => node.id === event.nodeId);
-          if (index === -1) {
-            return [...prev, { id: event.nodeId, alive: true }];
-          }
-
-          const next = [...prev];
-          next[index] = { ...next[index], alive: true };
-          return next;
+    const socket = createClusterSocket(
+      socketUrl,
+      (event: ClusterEvent) => {
+        setLastEventAt(event.ts);
+        setOpsPerSec(opsPerSecFromEvent(event));
+        setLatencySamples((prev) => {
+          const next = [...prev, latencySampleFromEvent(event)];
+          return next.slice(-maxLatencySamples);
         });
-        return;
-      }
 
-      if (event.type === "replica_lag") {
-        setReplicaLagMs(event.lagMs);
-        return;
-      }
+        if (event.type === "node_heartbeat") {
+          setNodes((prev) => {
+            const index = prev.findIndex((node) => node.id === event.nodeId);
+            if (index === -1) {
+              return [...prev, { id: event.nodeId, alive: true }];
+            }
 
-      if (event.type === "shard_moved") {
-        setShards((prev) => {
-          const index = prev.findIndex((shard) => shard.id === event.shardId);
-          if (index === -1) {
-            return [...prev, { id: event.shardId, owner: event.to }];
-          }
+            const next = [...prev];
+            next[index] = { ...next[index], alive: true };
+            return next;
+          });
+          return;
+        }
 
-          const next = [...prev];
-          next[index] = { ...next[index], owner: event.to };
-          return next;
-        });
-      }
-    });
+        if (event.type === "replica_lag") {
+          setReplicaLagMs(event.lagMs);
+          return;
+        }
+
+        if (event.type === "shard_moved") {
+          setShards((prev) => {
+            const index = prev.findIndex((shard) => shard.id === event.shardId);
+            if (index === -1) {
+              return [...prev, { id: event.shardId, owner: event.to }];
+            }
+
+            const next = [...prev];
+            next[index] = { ...next[index], owner: event.to };
+            return next;
+          });
+        }
+      },
+      { onStatusChange: setSocketStatus }
+    );
 
     return () => socket.close();
-  }, []);
+  }, [socketUrl]);
 
   const p99Ms = percentile(latencySamples, 0.99);
+  const sourceMode =
+    process.env.NEXT_PUBLIC_DASHBOARD_SOURCE === "MOCK" ? "MOCK" : "LIVE";
+  const benchmarkStatus: HealthStatus = benchmarkError
+    ? "error"
+    : benchmarkSnapshot
+    ? "healthy"
+    : "loading";
 
   return (
-    <main
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "32px",
-        padding: "32px"
-      }}
-    >
-      <header>
-        <h1>Cluster Dashboard</h1>
-        <p style={{ margin: 0, color: "#6b7280" }}>
-          Live throughput, latency, and replica lag signals.
-        </p>
+    <main className="dashboard-shell">
+      <header className="dashboard-header">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: "16px",
+            flexWrap: "wrap"
+          }}
+        >
+          <div>
+            <h1>Cluster Dashboard</h1>
+            <p>
+              Live throughput, latency, and replica lag signals.
+            </p>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-end",
+              gap: "6px"
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontSize: "0.85rem",
+                color: "#cbd5e1"
+              }}
+            >
+              <span>Source:</span>
+              <SourceBadge mode={sourceMode} />
+            </div>
+            <div style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+              Last event: {lastEventAt ?? "Awaiting events"}
+            </div>
+          </div>
+        </div>
       </header>
-      <section>
-        <h2>Performance</h2>
-        <MetricCards
-          opsPerSec={opsPerSec}
-          p99Ms={p99Ms}
-          replicaLagMs={replicaLagMs}
+      <section className="section-grid">
+        <h2 className="dashboard-section-title">Live integration</h2>
+        <ConnectionHealthPanel
+          socketStatus={socketStatus}
+          socketUrl={socketUrl}
+          benchmarkStatus={benchmarkStatus}
+          simulationStatus={simulationStatus}
+          lastEventAt={lastEventAt}
         />
-        <div style={{ marginTop: "16px" }}>
-          <LatencyChart values={latencySamples} />
-        </div>
-        <div style={{ marginTop: "16px" }}>
-          <BenchmarkPanel
-            snapshot={benchmarkSnapshot}
-            error={benchmarkError}
-          />
-        </div>
       </section>
-      <section>
-        <h2>Cluster Topology</h2>
+      <section className="section-grid">
+        <Card>
+          <CardHeader>
+            <CardTitle>Performance</CardTitle>
+            <CardDescription>
+              Throughput, latency and replication health for the active cluster.
+            </CardDescription>
+          </CardHeader>
+          <MetricCards
+            opsPerSec={opsPerSec}
+            p99Ms={p99Ms}
+            replicaLagMs={replicaLagMs}
+          />
+          <div style={{ marginTop: "16px" }}>
+            <LatencyChart values={latencySamples} />
+          </div>
+          <div style={{ marginTop: "16px" }}>
+            <BenchmarkPanel
+              snapshot={benchmarkSnapshot}
+              error={benchmarkError}
+            />
+          </div>
+        </Card>
+      </section>
+      <section className="section-grid">
+        <h2 className="dashboard-section-title">Cluster topology</h2>
         <TopologyMap nodes={nodes} shards={shards} />
       </section>
-      <section>
-        <h2>Failover Simulation</h2>
+      <section className="section-grid">
+        <h2 className="dashboard-section-title">Failover simulation</h2>
         <SimulationTimeline events={simulationEvents} />
       </section>
     </main>

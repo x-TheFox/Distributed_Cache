@@ -13,9 +13,9 @@ type BenchmarkPanelProps = {
 
 const panelStyle: React.CSSProperties = {
   borderRadius: "16px",
-  border: "1px solid #e5e7eb",
+  border: "1px solid #334155",
   padding: "16px",
-  background: "#ffffff",
+  background: "#0f172a",
   display: "flex",
   flexDirection: "column",
   gap: "16px"
@@ -35,14 +35,15 @@ const statStyle: React.CSSProperties = {
 
 const labelStyle: React.CSSProperties = {
   fontSize: "0.85rem",
-  color: "#6b7280",
+  color: "#94a3b8",
   textTransform: "uppercase",
   letterSpacing: "0.05em"
 };
 
 const valueStyle: React.CSSProperties = {
   fontSize: "1.4rem",
-  fontWeight: 600
+  fontWeight: 600,
+  color: "#e2e8f0"
 };
 
 const formatOps = (value: number) => Math.round(value).toString();
@@ -72,8 +73,8 @@ export function BenchmarkPanel({ snapshot, error }: BenchmarkPanelProps) {
   if (error) {
     return (
       <section aria-label="Benchmark snapshot" style={panelStyle}>
-        <h3 style={{ margin: 0 }}>Latest benchmark</h3>
-        <p style={{ margin: 0, color: "#b91c1c" }}>{error}</p>
+        <h3 style={{ margin: 0, color: "#f8fafc" }}>Latest benchmark</h3>
+        <p style={{ margin: 0, color: "#fca5a5" }}>{error}</p>
       </section>
     );
   }
@@ -81,8 +82,8 @@ export function BenchmarkPanel({ snapshot, error }: BenchmarkPanelProps) {
   if (!snapshot) {
     return (
       <section aria-label="Benchmark snapshot" style={panelStyle}>
-        <h3 style={{ margin: 0 }}>Latest benchmark</h3>
-        <p style={{ margin: 0, color: "#6b7280" }}>Loading benchmark snapshot...</p>
+        <h3 style={{ margin: 0, color: "#f8fafc" }}>Latest benchmark</h3>
+        <p style={{ margin: 0, color: "#94a3b8" }}>Loading benchmark snapshot...</p>
       </section>
     );
   }
@@ -95,7 +96,7 @@ export function BenchmarkPanel({ snapshot, error }: BenchmarkPanelProps) {
 
   return (
     <section aria-label="Benchmark snapshot" style={panelStyle}>
-      <h3 style={{ margin: 0 }}>Latest benchmark</h3>
+      <h3 style={{ margin: 0, color: "#f8fafc" }}>Latest benchmark</h3>
       <div style={statsGridStyle}>
         <div style={statStyle}>
           <span style={labelStyle}>Ops/sec</span>
@@ -118,7 +119,7 @@ export function BenchmarkPanel({ snapshot, error }: BenchmarkPanelProps) {
               }}
             >
               <dt style={{ fontWeight: 600 }}>{formatMetadataLabel(key)}</dt>
-              <dd style={{ margin: 0, color: "#374151" }}>
+              <dd style={{ margin: 0, color: "#cbd5e1" }}>
                 {formatMetadataValue(value)}
               </dd>
             </div>
