@@ -26,22 +26,26 @@ class AckPolicy {
   WriteResult ApplyWrite(const Mutation& mutation, WriteAckMode mode) {
     const auto log_index = wal_.Append(mutation);
     write_modes_[log_index] = mode;
+    const bool leader_committed = wal_.CommitIndex() >= log_index;
+    const bool has_replica_quorum =
+        replica_stream_.QuorumSize() > 0 && replica_stream_.HasQuorum(log_index);
     acked_[log_index] =
-        wal_.CommitIndex() >= log_index &&
+        leader_committed &&
         (mode == WriteAckMode::kFastLeaderCommit ||
-         replica_stream_.HasQuorum(log_index));
+         (mode == WriteAckMode::kStrongReplicaQuorum && has_replica_quorum));
     return BuildResult(log_index);
   }
 
   WriteResult ObserveReplicaAck(size_t replica_id, size_t log_index) {
-    replica_stream_.AckReplica(replica_id, log_index);
     const auto mode_it = write_modes_.find(log_index);
     if (mode_it == write_modes_.end()) {
       throw std::invalid_argument("unknown log index");
     }
+    replica_stream_.AckReplica(replica_id, log_index);
     if (mode_it->second == WriteAckMode::kStrongReplicaQuorum) {
-      acked_[log_index] = wal_.CommitIndex() >= log_index &&
-                          replica_stream_.HasQuorum(log_index);
+      const bool has_replica_quorum = replica_stream_.QuorumSize() > 0 &&
+                                      replica_stream_.HasQuorum(log_index);
+      acked_[log_index] = wal_.CommitIndex() >= log_index && has_replica_quorum;
     }
     return BuildResult(log_index);
   }
