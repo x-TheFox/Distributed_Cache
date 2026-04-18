@@ -106,6 +106,11 @@ add_executable(test_resp_set_get tests/integration/resp_set_get_test.cpp)
 target_link_libraries(test_resp_set_get PRIVATE gtest_main cache_protocol_lib)
 add_test(NAME resp_set_get COMMAND test_resp_set_get)
 
+add_executable(test_resp_worker tests/server/resp_worker_test.cpp)
+target_link_libraries(test_resp_worker PRIVATE gtest_main cache_server_lib
+                                               Threads::Threads)
+add_test(NAME RESPWorker COMMAND test_resp_worker)
+
 add_executable(test_grpc_cache_service tests/protocol/grpc_cache_service_test.cpp)
 target_link_libraries(test_grpc_cache_service PRIVATE gtest_main
                                                      cache_grpc_lib)

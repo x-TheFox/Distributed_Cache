@@ -25,6 +25,7 @@
 #include "protocol/grpc/cache_service.hpp"
 #include "protocol/resp/resp_parser.hpp"
 #include "server/node_config.hpp"
+#include "server/resp_worker.hpp"
 
 namespace {
 constexpr size_t kMaxRespFrameBytes = 1024 * 1024;
@@ -112,10 +113,6 @@ bool TryAcquireRespSlot(std::atomic<int>& active, int max_clients) {
       return true;
     }
   }
-}
-
-void ReleaseRespSlot(std::atomic<int>& active) {
-  active.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 struct RuntimeOptions {
@@ -369,12 +366,13 @@ void RunRespServer(int port, cache::core::ConcurrentStore& store,
       ::close(client_fd);
       continue;
     }
-    std::thread([client_fd, &store, &metrics, &stop, resp_idle_timeout,
-                 &active_resp_clients]() {
-      HandleRespClient(client_fd, store, metrics, stop, resp_idle_timeout);
-      ::close(client_fd);
-      ReleaseRespSlot(active_resp_clients);
-    }).detach();
+    if (!cache::server::StartRespWorker(
+            client_fd, active_resp_clients,
+            [&](int fd) {
+              HandleRespClient(fd, store, metrics, stop, resp_idle_timeout);
+            })) {
+      continue;
+    }
   }
   ::close(server_fd);
 }
