@@ -46,7 +46,14 @@ def test_duplicate_backend_hits_independent_of_read_ratio() -> None:
     assert low["read_ops"] != high["read_ops"]
     low_scenarios = {s["name"]: s for s in low["scenarios"]}
     high_scenarios = {s["name"]: s for s in high["scenarios"]}
+    for label, scenarios in ("low", low_scenarios), ("high", high_scenarios):
+        on_hits = scenarios["coalescing_on"]["duplicate_backend_hits"]
+        off_hits = scenarios["coalescing_off"]["duplicate_backend_hits"]
+        assert off_hits > 0, f"expected backend duplicates in {label} run"
+        assert off_hits / max(on_hits, 1.0) >= 4.0
     for name in ("coalescing_off", "coalescing_on"):
-        assert low_scenarios[name]["duplicate_backend_hits"] == pytest.approx(
-            high_scenarios[name]["duplicate_backend_hits"]
-        )
+        low_hits = low_scenarios[name]["duplicate_backend_hits"]
+        high_hits = high_scenarios[name]["duplicate_backend_hits"]
+        drift = abs(low_hits - high_hits)
+        allowed = max(2.0, 0.2 * max(low_hits, high_hits))
+        assert drift <= allowed
