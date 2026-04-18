@@ -15,6 +15,7 @@ enum class CommandStatus {
   kOk,
   kNotFound,
   kError,
+  kInvalidKey,
   kUnknownCommand,
 };
 

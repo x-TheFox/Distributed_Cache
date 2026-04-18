@@ -9,6 +9,8 @@
 
 namespace cache::server {
 namespace {
+constexpr char kEmptyKeyMessage[] = "key must not be empty";
+
 std::string ToUpper(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(),
                  [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
@@ -28,12 +30,18 @@ CommandResult DispatchCommand(std::string_view command,
     if (args.size() != 2) {
       return ErrorResult(CommandStatus::kError, "wrong number of arguments");
     }
+    if (args[0].empty()) {
+      return ErrorResult(CommandStatus::kInvalidKey, kEmptyKeyMessage);
+    }
     store.Set(args[0], args[1], std::nullopt);
     return CommandResult{CommandStatus::kOk, std::nullopt, {}};
   }
   if (name == "GET") {
     if (args.size() != 1) {
       return ErrorResult(CommandStatus::kError, "wrong number of arguments");
+    }
+    if (args[0].empty()) {
+      return ErrorResult(CommandStatus::kInvalidKey, kEmptyKeyMessage);
     }
     auto value = store.Get(args[0]);
     if (!value.has_value()) {
@@ -64,6 +72,7 @@ std::string ExecuteCommand(const RESPCommand& cmd,
     case cache::server::CommandStatus::kNotFound:
       return "$-1\r\n";
     case cache::server::CommandStatus::kError:
+    case cache::server::CommandStatus::kInvalidKey:
     case cache::server::CommandStatus::kUnknownCommand:
       return "-ERR " + result.message + "\r\n";
   }
