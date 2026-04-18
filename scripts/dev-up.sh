@@ -13,15 +13,22 @@ CACHE_SHARD_COUNT="${CACHE_SHARD_COUNT:-64}"
 CACHE_VIRTUAL_NODES="${CACHE_VIRTUAL_NODES:-128}"
 CACHE_NODE_ID="${CACHE_NODE_ID:-local-dev}"
 CACHE_SERVER_ARGS="${CACHE_SERVER_ARGS:-}"
+CACHE_RESP_READY_TIMEOUT="${CACHE_RESP_READY_TIMEOUT:-10}"
+CACHE_METRICS_READY_TIMEOUT="${CACHE_METRICS_READY_TIMEOUT:-10}"
 
 DASHBOARD_PORT="${DASHBOARD_PORT:-3000}"
 DASHBOARD_WS_URL="${DASHBOARD_WS_URL:-ws://localhost:8080/ws}"
 DASHBOARD_SOURCE="${DASHBOARD_SOURCE:-LIVE}"
+DASHBOARD_READY_TIMEOUT="${DASHBOARD_READY_TIMEOUT:-15}"
 
 CACHE_PID_FILE="${DEV_RUNTIME_DIR}/cache_server.pid"
 CACHE_LOG_FILE="${DEV_RUNTIME_DIR}/cache_server.log"
 DASHBOARD_PID_FILE="${DEV_RUNTIME_DIR}/dashboard.pid"
 DASHBOARD_LOG_FILE="${DEV_RUNTIME_DIR}/dashboard.log"
+CACHE_STARTED=0
+DASHBOARD_STARTED=0
+CACHE_PID=""
+DASHBOARD_PID=""
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -37,6 +44,106 @@ is_running() {
   fi
   kill -0 "${pid}" 2>/dev/null
 }
+
+pid_command_line() {
+  local pid="$1"
+  ps -p "${pid}" -o command= 2>/dev/null
+}
+
+pid_matches() {
+  local pid="$1"
+  local expected="$2"
+  local cmdline
+  cmdline="$(pid_command_line "${pid}")" || return 1
+  if [[ -z "${cmdline}" ]]; then
+    return 1
+  fi
+  [[ "${cmdline}" == *"${expected}"* ]]
+}
+
+read_pid_file() {
+  local pid_file="$1"
+  if [[ ! -f "${pid_file}" ]]; then
+    return 1
+  fi
+  local pid
+  pid="$(cat "${pid_file}")"
+  if [[ ! "${pid}" =~ ^[0-9]+$ ]]; then
+    rm -f "${pid_file}"
+    return 1
+  fi
+  echo "${pid}"
+}
+
+validate_pid_file() {
+  local label="$1"
+  local pid_file="$2"
+  local expected="$3"
+  local pid
+  pid="$(read_pid_file "${pid_file}")" || return 1
+  if ! is_running "${pid}"; then
+    echo "${label} not running (stale pid ${pid})."
+    rm -f "${pid_file}"
+    return 1
+  fi
+  if ! pid_matches "${pid}" "${expected}"; then
+    echo "${label} pid ${pid} does not match expected command; cleaning pid file."
+    rm -f "${pid_file}"
+    return 1
+  fi
+  echo "${pid}"
+}
+
+stop_owned_process() {
+  local label="$1"
+  local pid="$2"
+  local pid_file="$3"
+  local expected="$4"
+
+  if [[ -z "${pid}" ]]; then
+    pid="$(read_pid_file "${pid_file}" || true)"
+  fi
+  if [[ -z "${pid}" ]]; then
+    return
+  fi
+  if ! is_running "${pid}"; then
+    rm -f "${pid_file}"
+    return
+  fi
+  if ! pid_matches "${pid}" "${expected}"; then
+    echo "${label} pid ${pid} does not match expected command; skipping stop."
+    rm -f "${pid_file}"
+    return
+  fi
+  echo "Stopping ${label} (pid ${pid})..."
+  kill "${pid}"
+  for _ in {1..40}; do
+    if ! is_running "${pid}"; then
+      rm -f "${pid_file}"
+      echo "${label} stopped."
+      return
+    fi
+    sleep 0.25
+  done
+  echo "${label} did not stop in time; killing."
+  kill -9 "${pid}" 2>/dev/null || true
+  rm -f "${pid_file}"
+}
+
+rollback_on_failure() {
+  local exit_code=$?
+  if [[ "${exit_code}" -eq 0 ]]; then
+    return
+  fi
+  if [[ "${DASHBOARD_STARTED}" -eq 1 ]]; then
+    stop_owned_process "dashboard" "${DASHBOARD_PID}" "${DASHBOARD_PID_FILE}" "${ROOT_DIR}/dashboard"
+  fi
+  if [[ "${CACHE_STARTED}" -eq 1 ]]; then
+    stop_owned_process "cache server" "${CACHE_PID}" "${CACHE_PID_FILE}" "${CACHE_BIN}"
+  fi
+}
+
+trap rollback_on_failure EXIT
 
 wait_for_port() {
   local port="$1"
@@ -69,7 +176,7 @@ wait_for_http() {
   local url="$1"
   local timeout="${2:-10}"
   local deadline=$((SECONDS + timeout))
-  until curl -fsS "${url}" >/dev/null 2>&1; do
+  until curl -fsS --connect-timeout 1 --max-time 1 "${url}" >/dev/null 2>&1; do
     if (( SECONDS >= deadline )); then
       return 1
     fi
@@ -104,14 +211,13 @@ ensure_dashboard_deps() {
 }
 
 start_cache_server() {
-  if [[ -f "${CACHE_PID_FILE}" ]]; then
-    local existing_pid
-    existing_pid="$(cat "${CACHE_PID_FILE}")"
-    if is_running "${existing_pid}"; then
-      echo "Cache server already running (pid ${existing_pid})."
-      return
-    fi
-    rm -f "${CACHE_PID_FILE}"
+  local existing_pid
+  existing_pid="$(validate_pid_file "Cache server" "${CACHE_PID_FILE}" "${CACHE_BIN}" || true)"
+  if [[ -n "${existing_pid}" ]]; then
+    echo "Cache server already running (pid ${existing_pid})."
+    CACHE_PID="${existing_pid}"
+    CACHE_STARTED=0
+    return
   fi
 
   echo "Starting cache server..."
@@ -124,29 +230,29 @@ start_cache_server() {
     --metrics-port="${CACHE_METRICS_PORT}" \
     ${CACHE_SERVER_ARGS} \
     >"${CACHE_LOG_FILE}" 2>&1 &
-  echo $! > "${CACHE_PID_FILE}"
+  CACHE_PID=$!
+  CACHE_STARTED=1
+  echo "${CACHE_PID}" > "${CACHE_PID_FILE}"
 }
 
 start_dashboard() {
-  if [[ -f "${DASHBOARD_PID_FILE}" ]]; then
-    local existing_pid
-    existing_pid="$(cat "${DASHBOARD_PID_FILE}")"
-    if is_running "${existing_pid}"; then
-      echo "Dashboard already running (pid ${existing_pid})."
-      return
-    fi
-    rm -f "${DASHBOARD_PID_FILE}"
+  local existing_pid
+  existing_pid="$(validate_pid_file "Dashboard" "${DASHBOARD_PID_FILE}" "${ROOT_DIR}/dashboard" || true)"
+  if [[ -n "${existing_pid}" ]]; then
+    echo "Dashboard already running (pid ${existing_pid})."
+    DASHBOARD_PID="${existing_pid}"
+    DASHBOARD_STARTED=0
+    return
   fi
 
   echo "Starting dashboard..."
-  (
-    cd "${ROOT_DIR}/dashboard"
-    NEXT_PUBLIC_CLUSTER_WS_URL="${DASHBOARD_WS_URL}" \
-      NEXT_PUBLIC_DASHBOARD_SOURCE="${DASHBOARD_SOURCE}" \
-      npm run dev -- --port "${DASHBOARD_PORT}" \
-      >"${DASHBOARD_LOG_FILE}" 2>&1 &
-    echo $! > "${DASHBOARD_PID_FILE}"
-  )
+  NEXT_PUBLIC_CLUSTER_WS_URL="${DASHBOARD_WS_URL}" \
+    NEXT_PUBLIC_DASHBOARD_SOURCE="${DASHBOARD_SOURCE}" \
+    npm --prefix "${ROOT_DIR}/dashboard" run dev -- --port "${DASHBOARD_PORT}" \
+    >"${DASHBOARD_LOG_FILE}" 2>&1 &
+  DASHBOARD_PID=$!
+  DASHBOARD_STARTED=1
+  echo "${DASHBOARD_PID}" > "${DASHBOARD_PID_FILE}"
 }
 
 require_cmd cmake
@@ -164,20 +270,20 @@ start_cache_server
 start_dashboard
 
 if [[ "${CACHE_RESP_PORT}" != "0" ]]; then
-  if ! wait_for_port "${CACHE_RESP_PORT}" 10; then
+  if ! wait_for_port "${CACHE_RESP_PORT}" "${CACHE_RESP_READY_TIMEOUT}"; then
     echo "Cache RESP port ${CACHE_RESP_PORT} did not become ready." >&2
     exit 1
   fi
 fi
 
 if [[ "${CACHE_METRICS_PORT}" != "0" ]]; then
-  if ! wait_for_http "http://localhost:${CACHE_METRICS_PORT}/metrics" 10; then
+  if ! wait_for_http "http://localhost:${CACHE_METRICS_PORT}/metrics" "${CACHE_METRICS_READY_TIMEOUT}"; then
     echo "Cache metrics endpoint did not become ready." >&2
     exit 1
   fi
 fi
 
-if ! wait_for_http "http://localhost:${DASHBOARD_PORT}" 15; then
+if ! wait_for_http "http://localhost:${DASHBOARD_PORT}" "${DASHBOARD_READY_TIMEOUT}"; then
   echo "Dashboard did not become ready." >&2
   exit 1
 fi

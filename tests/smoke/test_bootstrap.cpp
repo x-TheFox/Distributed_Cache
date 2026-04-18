@@ -1,8 +1,11 @@
+#include <array>
 #include <chrono>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <errno.h>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -304,6 +307,69 @@ std::filesystem::path RepoRoot() {
   }
   return std::filesystem::current_path();
 }
+
+class ScopedEnvVar {
+ public:
+  ScopedEnvVar(const std::string& key, const std::string& value)
+      : key_(key) {
+    const char* existing = std::getenv(key.c_str());
+    if (existing) {
+      previous_ = std::string(existing);
+    }
+    ::setenv(key.c_str(), value.c_str(), 1);
+  }
+  ~ScopedEnvVar() {
+    if (previous_.has_value()) {
+      ::setenv(key_.c_str(), previous_->c_str(), 1);
+    } else {
+      ::unsetenv(key_.c_str());
+    }
+  }
+  ScopedEnvVar(const ScopedEnvVar&) = delete;
+  ScopedEnvVar& operator=(const ScopedEnvVar&) = delete;
+
+ private:
+  std::string key_;
+  std::optional<std::string> previous_;
+};
+
+bool CommandExists(const std::string& command) {
+  std::string probe = "command -v " + command + " >/dev/null 2>&1";
+  return ::system(probe.c_str()) == 0;
+}
+
+std::string ReadCommandOutput(const std::string& command) {
+  std::array<char, 256> buffer{};
+  std::string output;
+  FILE* pipe = ::popen(command.c_str(), "r");
+  if (!pipe) {
+    return output;
+  }
+  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    output.append(buffer.data());
+  }
+  ::pclose(pipe);
+  return output;
+}
+
+bool ProcessListContains(const std::string& needle) {
+  auto output = ReadCommandOutput("ps -ax -o command");
+  return output.find(needle) != std::string::npos;
+}
+
+bool IsProcessRunning(pid_t pid) {
+  return pid > 0 && ::kill(pid, 0) == 0;
+}
+
+pid_t StartSleepProcess(int seconds) {
+  pid_t pid = ::fork();
+  if (pid == 0) {
+    std::string duration = std::to_string(seconds);
+    ::execlp("sleep", "sleep", duration.c_str(), nullptr);
+    _exit(127);
+  }
+  return pid;
+}
 }  // namespace
 
 TEST(Bootstrap, DefaultConfigIsValid) {
@@ -474,4 +540,78 @@ TEST(Bootstrap, CacheServerStopsPromptlyOnSignal) {
     FAIL() << "cache_server did not exit promptly after SIGTERM";
   }
   EXPECT_EQ(*exit_code, 0);
+}
+
+TEST(Bootstrap, DevUpRollsBackCacheOnFailure) {
+  if (!CommandExists("cmake") || !CommandExists("npm") || !CommandExists("node") ||
+      !CommandExists("curl") || !CommandExists("python3")) {
+    GTEST_SKIP() << "dev-up dependencies not available";
+  }
+
+  auto root = RepoRoot();
+  auto runtime_dir = std::filesystem::current_path() / "test_runtime" /
+                     ("dev-up-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(runtime_dir);
+  std::filesystem::create_directories(runtime_dir);
+
+  auto blocker = ScopedListener::ListenOnEphemeralPort();
+  ASSERT_TRUE(blocker.has_value());
+
+  std::string node_id = "bootstrap-test-" + std::to_string(::getpid());
+  std::string node_arg = "--node-id=" + node_id;
+
+  ScopedEnvVar env_runtime("DEV_RUNTIME_DIR", runtime_dir.string());
+  ScopedEnvVar env_resp("CACHE_RESP_PORT", "0");
+  ScopedEnvVar env_grpc("CACHE_GRPC_PORT", "0");
+  ScopedEnvVar env_metrics("CACHE_METRICS_PORT", "0");
+  ScopedEnvVar env_node("CACHE_NODE_ID", node_id);
+  ScopedEnvVar env_args("CACHE_SERVER_ARGS", "--run-for-ms=10000");
+  ScopedEnvVar env_resp_timeout("CACHE_RESP_READY_TIMEOUT", "1");
+  ScopedEnvVar env_metrics_timeout("CACHE_METRICS_READY_TIMEOUT", "1");
+  ScopedEnvVar env_dashboard_port("DASHBOARD_PORT",
+                                  std::to_string(blocker->port()));
+  ScopedEnvVar env_dashboard_timeout("DASHBOARD_READY_TIMEOUT", "1");
+
+  int result = ::system((root / "scripts/dev-up.sh").c_str());
+  EXPECT_NE(result, 0);
+
+  auto pid_file = runtime_dir / "cache_server.pid";
+  if (std::filesystem::exists(pid_file)) {
+    std::ifstream pid_in(pid_file);
+    pid_t pid = -1;
+    pid_in >> pid;
+    if (IsProcessRunning(pid)) {
+      TerminateProcess(pid);
+    }
+  }
+
+  EXPECT_FALSE(ProcessListContains(node_arg));
+  std::filesystem::remove_all(runtime_dir);
+}
+
+TEST(Bootstrap, DevDownDoesNotKillUnrelatedProcess) {
+  auto root = RepoRoot();
+  auto runtime_dir = std::filesystem::current_path() / "test_runtime" /
+                     ("dev-down-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(runtime_dir);
+  std::filesystem::create_directories(runtime_dir);
+
+  pid_t pid = StartSleepProcess(10);
+  ASSERT_GT(pid, 0);
+
+  auto pid_file = runtime_dir / "cache_server.pid";
+  {
+    std::ofstream pid_out(pid_file);
+    pid_out << pid;
+  }
+
+  ScopedEnvVar env_runtime("DEV_RUNTIME_DIR", runtime_dir.string());
+  int result = ::system((root / "scripts/dev-down.sh").c_str());
+  EXPECT_EQ(result, 0);
+
+  EXPECT_TRUE(IsProcessRunning(pid));
+  EXPECT_FALSE(std::filesystem::exists(pid_file));
+
+  TerminateProcess(pid);
+  std::filesystem::remove_all(runtime_dir);
 }
