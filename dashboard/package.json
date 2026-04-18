@@ -1,0 +1,13 @@
+{
+  "name": "distributed-cache-dashboard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vite": "^5.2.0",
+    "vitest": "^1.6.0"
+  }
+}
