@@ -52,5 +52,6 @@ void RaftMetadataAdapter::ElectLeaderIfNeeded(ShardMetadata& shard) {
       return;
     }
   }
+  shard.leader.clear();
 }
 }  // namespace cache::control

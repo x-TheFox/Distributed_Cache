@@ -26,6 +26,21 @@ void HeartbeatManager::OnHeartbeatTimeout(const std::string& node_id) {
   entry.alive = false;
 }
 
+void HeartbeatManager::IngestGossip(
+    const std::vector<NodeHealth>& observations) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (const auto& observation : observations) {
+    auto& entry = nodes_[observation.node_id];
+    if (!entry.node_id.empty() &&
+        entry.last_heartbeat_ms > observation.last_heartbeat_ms) {
+      continue;
+    }
+    entry.node_id = observation.node_id;
+    entry.alive = observation.alive;
+    entry.last_heartbeat_ms = observation.last_heartbeat_ms;
+  }
+}
+
 std::optional<NodeHealth> HeartbeatManager::GetNodeHealth(
     const std::string& node_id) const {
   std::lock_guard<std::mutex> lock(mutex_);

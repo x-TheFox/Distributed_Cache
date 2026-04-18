@@ -121,7 +121,11 @@ add_executable(test_failover_metadata tests/control/failover_metadata_test.cpp)
 target_link_libraries(test_failover_metadata PRIVATE gtest_main cache_control_lib)
 add_test(NAME FailoverMetadata COMMAND test_failover_metadata)
 
+add_executable(test_heartbeat_manager tests/control/heartbeat_manager_test.cpp)
+target_link_libraries(test_heartbeat_manager PRIVATE gtest_main cache_control_lib)
+add_test(NAME HeartbeatManager COMMAND test_heartbeat_manager)
+
 add_executable(test_prometheus_endpoint tests/metrics/prometheus_endpoint_test.cpp)
 target_link_libraries(test_prometheus_endpoint PRIVATE gtest_main
-                                                      cache_metrics_lib)
+                                                     cache_metrics_lib)
 add_test(NAME Prometheus COMMAND test_prometheus_endpoint)

@@ -19,6 +19,7 @@ class HeartbeatManager {
   void RegisterNode(const std::string& node_id, uint64_t heartbeat_ms = 0);
   void RecordHeartbeat(const std::string& node_id, uint64_t heartbeat_ms);
   void OnHeartbeatTimeout(const std::string& node_id);
+  void IngestGossip(const std::vector<NodeHealth>& observations);
 
   std::optional<NodeHealth> GetNodeHealth(const std::string& node_id) const;
   std::vector<NodeHealth> Snapshot() const;

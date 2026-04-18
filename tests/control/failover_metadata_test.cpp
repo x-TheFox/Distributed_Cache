@@ -18,4 +18,17 @@ TEST(FailoverMetadata, LeaderOwnershipChangesOnHeartbeatLoss) {
   ASSERT_TRUE(health.has_value());
   EXPECT_FALSE(health->alive);
 }
+
+TEST(FailoverMetadata, LeaderClearsWhenNoHealthyReplica) {
+  RaftMetadataAdapter metadata;
+  metadata.RegisterNode("node-a", 100);
+  metadata.RegisterNode("node-b", 100);
+  metadata.AddShard("shard-1", {"node-a", "node-b"});
+
+  metadata.OnHeartbeatTimeout("node-a");
+  EXPECT_EQ(metadata.LeaderForShard("shard-1"), "node-b");
+
+  metadata.OnHeartbeatTimeout("node-b");
+  EXPECT_TRUE(metadata.LeaderForShard("shard-1").empty());
+}
 }  // namespace cache::control
