@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <string>
@@ -42,8 +43,13 @@ struct ScenarioResult {
   std::string status;
 };
 
+struct ScenarioSpec {
+  std::string name;
+  size_t requests;
+};
+
 struct ScenarioMatrixResult {
-  std::vector<std::string> names;
+  std::vector<ScenarioSpec> scenarios;
   std::string error;
 };
 
@@ -214,7 +220,8 @@ class JsonReader {
     return false;
   }
 
-  bool ParseScenarioArray(std::vector<std::string>& names) {
+  bool ParseScenarioArray(std::vector<ScenarioSpec>& scenarios,
+                          size_t default_requests) {
     if (!Consume('[')) {
       return false;
     }
@@ -223,7 +230,7 @@ class JsonReader {
       return true;
     }
     while (true) {
-      if (!ParseScenarioObject(names)) {
+      if (!ParseScenarioObject(scenarios, default_requests)) {
         return false;
       }
       SkipWhitespace();
@@ -286,6 +293,34 @@ class JsonReader {
   }
 
  private:
+  bool ParseUnsigned(size_t& out) {
+    SkipWhitespace();
+    if (pos_ >= input_.size() ||
+        !std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
+      return false;
+    }
+    size_t value = 0;
+    while (pos_ < input_.size() &&
+           std::isdigit(static_cast<unsigned char>(input_[pos_]))) {
+      unsigned digit = static_cast<unsigned>(input_[pos_] - '0');
+      if (value >
+          (std::numeric_limits<size_t>::max() - digit) / static_cast<size_t>(10)) {
+        return false;
+      }
+      value = value * static_cast<size_t>(10) + digit;
+      ++pos_;
+    }
+    if (pos_ < input_.size()) {
+      char next = input_[pos_];
+      if (next == '.' || next == 'e' || next == 'E' || next == '-' ||
+          next == '+') {
+        return false;
+      }
+    }
+    out = value;
+    return true;
+  }
+
   bool SkipArray() {
     if (!Consume('[')) {
       return false;
@@ -337,11 +372,14 @@ class JsonReader {
     }
   }
 
-  bool ParseScenarioObject(std::vector<std::string>& names) {
+  bool ParseScenarioObject(std::vector<ScenarioSpec>& scenarios,
+                           size_t default_requests) {
     if (!Consume('{')) {
       return false;
     }
     bool found_name = false;
+    size_t requests = default_requests;
+    std::string name;
     SkipWhitespace();
     if (Consume('}')) {
       return false;
@@ -355,12 +393,16 @@ class JsonReader {
         return false;
       }
       if (key == "name") {
-        std::string name;
         if (!ParseString(name)) {
           return false;
         }
-        names.push_back(name);
         found_name = true;
+      } else if (key == "requests") {
+        size_t parsed_requests = 0;
+        if (!ParseUnsigned(parsed_requests)) {
+          return false;
+        }
+        requests = parsed_requests;
       } else {
         if (!SkipValue()) {
           return false;
@@ -368,7 +410,11 @@ class JsonReader {
       }
       SkipWhitespace();
       if (Consume('}')) {
-        return found_name;
+        if (!found_name) {
+          return false;
+        }
+        scenarios.push_back({name, requests});
+        return true;
       }
       if (!Consume(',')) {
         return false;
@@ -451,8 +497,8 @@ class JsonReader {
   }
 };
 
-bool ParseScenarioMatrix(std::string_view contents,
-                         std::vector<std::string>& names) {
+bool ParseScenarioMatrix(std::string_view contents, size_t default_requests,
+                         std::vector<ScenarioSpec>& scenarios) {
   JsonReader reader(contents);
   if (!reader.Consume('{')) {
     return false;
@@ -475,7 +521,7 @@ bool ParseScenarioMatrix(std::string_view contents,
         return false;
       }
       found_scenarios = true;
-      if (!reader.ParseScenarioArray(names)) {
+      if (!reader.ParseScenarioArray(scenarios, default_requests)) {
         return false;
       }
     } else {
@@ -491,13 +537,14 @@ bool ParseScenarioMatrix(std::string_view contents,
       return false;
     }
   }
-  if (!found_scenarios || names.empty()) {
+  if (!found_scenarios || scenarios.empty()) {
     return false;
   }
   return reader.AtEnd();
 }
 
-ScenarioMatrixResult LoadScenarioMatrix(const fs::path& path) {
+ScenarioMatrixResult LoadScenarioMatrix(const fs::path& path,
+                                        size_t default_requests) {
   ScenarioMatrixResult result;
   std::ifstream in(path);
   if (!in) {
@@ -507,7 +554,8 @@ ScenarioMatrixResult LoadScenarioMatrix(const fs::path& path) {
   std::stringstream buffer;
   buffer << in.rdbuf();
   std::string contents = buffer.str();
-  if (contents.empty() || !ParseScenarioMatrix(contents, result.names)) {
+  if (contents.empty() ||
+      !ParseScenarioMatrix(contents, default_requests, result.scenarios)) {
     result.error = "Scenario matrix file invalid: " + path.string();
   }
   return result;
@@ -629,15 +677,17 @@ int main(int argc, char** argv) {
                                 coalescing_concurrency);
 
   const fs::path matrix_path = fs::path("bench/scenarios/scenario_matrix.json");
-  ScenarioMatrixResult scenario_matrix = LoadScenarioMatrix(matrix_path);
+  ScenarioMatrixResult scenario_matrix =
+      LoadScenarioMatrix(matrix_path, config.ops);
   if (!scenario_matrix.error.empty()) {
     std::cerr << scenario_matrix.error << '\n';
     return 1;
   }
-  const std::vector<std::string>& scenario_names = scenario_matrix.names;
+  const std::vector<ScenarioSpec>& scenario_specs = scenario_matrix.scenarios;
   std::vector<ScenarioResult> scenario_results;
-  scenario_results.reserve(scenario_names.size());
-  for (const auto& name : scenario_names) {
+  scenario_results.reserve(scenario_specs.size());
+  for (const auto& spec : scenario_specs) {
+    const auto& name = spec.name;
     double coalescing_hit_ratio = 0.0;
     double duplicate_backend_hits = 0.0;
     if (name == "coalescing_off") {
@@ -649,7 +699,7 @@ int main(int argc, char** argv) {
     }
     scenario_results.push_back(
         {name,
-         config.ops,
+         spec.requests,
          ops_per_sec,
          p50,
          p99,

@@ -119,6 +119,29 @@ def test_benchmark_matrix_output_has_required_scenarios():
             BENCH_OUTPUT.unlink()
 
 
+def test_benchmark_output_preserves_matrix_requests():
+    original = SCENARIO_MATRIX.read_text()
+    matrix = _load_matrix()
+    overrides = {
+        "read_heavy": MIN_SCENARIO_REQUESTS + 5000,
+        "write_heavy": MIN_SCENARIO_REQUESTS + 9000,
+    }
+    for scenario in matrix["scenarios"]:
+        name = scenario.get("name")
+        if name in overrides:
+            scenario["requests"] = overrides[name]
+    SCENARIO_MATRIX.write_text(json.dumps(matrix, indent=2))
+    try:
+        data = _load_output()
+        scenarios = {s["name"]: s for s in data["scenarios"]}
+        for name, requests in overrides.items():
+            assert scenarios[name]["requests"] == requests
+    finally:
+        SCENARIO_MATRIX.write_text(original)
+        if BENCH_OUTPUT.exists():
+            BENCH_OUTPUT.unlink()
+
+
 def test_benchmark_fails_on_missing_matrix_file():
     original = SCENARIO_MATRIX.read_text()
     backup = SCENARIO_MATRIX.with_suffix(".json.bak")
