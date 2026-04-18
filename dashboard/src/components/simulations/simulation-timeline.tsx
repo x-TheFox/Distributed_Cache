@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import type { ClusterEvent } from "@/contracts/cluster-events";
+import type { ScenarioDefinition } from "@/lib/simulations/scenario-registry";
 
 import { SimulationControls } from "./simulation-controls";
 
@@ -15,6 +16,8 @@ type OrderedEvent = {
   event: ClusterEvent;
   order: number;
 };
+
+type ScenarioStatus = "loading" | "ready" | "error";
 
 const timelineContainerStyle: React.CSSProperties = {
   border: "1px solid #334155",
@@ -64,6 +67,34 @@ const sortEvents = (events: ClusterEvent[]): OrderedEvent[] =>
     .map((event, index) => ({ event, order: index }))
     .sort((a, b) => (a.event.ts - b.event.ts) || a.order - b.order);
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isScenarioDefinition = (value: unknown): value is ScenarioDefinition => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (typeof value.id !== "string" || typeof value.label !== "string") {
+    return false;
+  }
+  if ("plugin" in value && value.plugin !== undefined && typeof value.plugin !== "string") {
+    return false;
+  }
+  return true;
+};
+
+const parseScenarioPayload = (payload: unknown): ScenarioDefinition[] | null => {
+  if (!isRecord(payload) || !Array.isArray(payload.scenarios)) {
+    return null;
+  }
+
+  if (!payload.scenarios.every(isScenarioDefinition)) {
+    return null;
+  }
+
+  return payload.scenarios;
+};
+
 export function SimulationTimeline({
   events,
   intervalMs = 1000
@@ -73,6 +104,9 @@ export function SimulationTimeline({
     orderedEvents.length > 0 ? 0 : null
   );
   const [isPlaying, setIsPlaying] = useState(false);
+  const [scenarios, setScenarios] = useState<ScenarioDefinition[]>([]);
+  const [scenarioStatus, setScenarioStatus] = useState<ScenarioStatus>("loading");
+  const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
 
   useEffect(() => {
     if (orderedEvents.length === 0) {
@@ -88,6 +122,60 @@ export function SimulationTimeline({
       return prev;
     });
   }, [orderedEvents.length]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadScenarios = async () => {
+      try {
+        setScenarioStatus("loading");
+        const response = await fetch("/api/scenarios", { signal: controller.signal });
+        if (!response.ok) {
+          if (!cancelled) {
+            setScenarioStatus("error");
+          }
+          return;
+        }
+
+        const payload = await response.json();
+        const parsed = parseScenarioPayload(payload);
+        if (!parsed) {
+          if (!cancelled) {
+            setScenarioStatus("error");
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setScenarios(parsed);
+          setScenarioStatus("ready");
+        }
+      } catch {
+        if (!cancelled) {
+          setScenarioStatus("error");
+        }
+      }
+    };
+
+    loadScenarios();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (scenarios.length === 0) {
+      setActiveScenarioId(null);
+      return;
+    }
+
+    setActiveScenarioId((prev) =>
+      prev && scenarios.some((scenario) => scenario.id === prev) ? prev : scenarios[0].id
+    );
+  }, [scenarios]);
 
   useEffect(() => {
     if (!isPlaying || orderedEvents.length === 0) {
@@ -134,6 +222,12 @@ export function SimulationTimeline({
     setCurrentIndex(orderedEvents.length > 0 ? 0 : null);
   };
 
+  const handleScenarioChange = (scenarioId: string) => {
+    setActiveScenarioId(scenarioId);
+    setIsPlaying(false);
+    setCurrentIndex(orderedEvents.length > 0 ? 0 : null);
+  };
+
   const handleScrub = (value: number) => {
     setIsPlaying(false);
     setCurrentIndex(value);
@@ -153,6 +247,10 @@ export function SimulationTimeline({
           onPlay={handlePlay}
           onPause={handlePause}
           onReset={handleReset}
+          scenarios={scenarios}
+          activeScenarioId={activeScenarioId}
+          onScenarioChange={handleScenarioChange}
+          scenarioStatus={scenarioStatus}
         />
       </header>
 
