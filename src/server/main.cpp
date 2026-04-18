@@ -1,9 +1,11 @@
 #include <atomic>
 #include <charconv>
 #include <chrono>
+#include <condition_variable>
 #include <csignal>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -29,6 +31,7 @@ constexpr size_t kMaxRespFrameBytes = 1024 * 1024;
 constexpr int kListenBacklog = 64;
 constexpr int kSelectTimeoutMs = 200;
 constexpr int kSocketTimeoutMs = 200;
+constexpr int kMaxPort = 65535;
 
 std::atomic<bool>* g_stop_flag = nullptr;
 
@@ -100,6 +103,10 @@ struct RuntimeOptions {
   std::optional<std::chrono::milliseconds> run_for;
 };
 
+bool PortInRange(int port) {
+  return port >= 0 && port <= kMaxPort;
+}
+
 std::optional<RuntimeOptions> ParseArgs(int argc, char** argv) {
   RuntimeOptions options;
   for (int i = 1; i < argc; ++i) {
@@ -148,9 +155,10 @@ std::optional<RuntimeOptions> ParseArgs(int argc, char** argv) {
     std::cerr << "Invalid shard or virtual node count\n";
     return std::nullopt;
   }
-  if (options.config.listen_port < 0 || options.config.grpc_port < 0 ||
-      options.config.metrics_port < 0) {
-    std::cerr << "Ports must be non-negative\n";
+  if (!PortInRange(options.config.listen_port) ||
+      !PortInRange(options.config.grpc_port) ||
+      !PortInRange(options.config.metrics_port)) {
+    std::cerr << "Ports must be between 0 and 65535\n";
     return std::nullopt;
   }
   if (options.config.node_id.empty()) {
@@ -247,14 +255,21 @@ void HandleRespClient(int client_fd, cache::core::ConcurrentStore& store,
   }
 }
 
+void RequestStop(std::atomic<bool>& stop, std::condition_variable& stop_cv) {
+  stop.store(true);
+  stop_cv.notify_all();
+}
+
 void RunRespServer(int port, cache::core::ConcurrentStore& store,
                    cache::metrics::PrometheusEndpoint& metrics,
-                   std::atomic<bool>& stop) {
+                   std::atomic<bool>& stop, std::atomic<bool>& failed,
+                   std::condition_variable& stop_cv) {
   int bound_port = 0;
   int server_fd = CreateListeningSocket(port, &bound_port);
   if (server_fd < 0) {
     std::cerr << "Failed to bind RESP port " << port << "\n";
-    stop.store(true);
+    failed.store(true);
+    RequestStop(stop, stop_cv);
     return;
   }
   while (!stop.load()) {
@@ -302,12 +317,14 @@ void HandleMetricsClient(int client_fd,
 }
 
 void RunMetricsServer(int port, cache::metrics::PrometheusEndpoint& metrics,
-                      std::atomic<bool>& stop) {
+                      std::atomic<bool>& stop, std::atomic<bool>& failed,
+                      std::condition_variable& stop_cv) {
   int bound_port = 0;
   int server_fd = CreateListeningSocket(port, &bound_port);
   if (server_fd < 0) {
     std::cerr << "Failed to bind metrics port " << port << "\n";
-    stop.store(true);
+    failed.store(true);
+    RequestStop(stop, stop_cv);
     return;
   }
   while (!stop.load()) {
@@ -367,6 +384,9 @@ int main(int argc, char** argv) {
   }
 
   std::atomic<bool> stop{false};
+  std::atomic<bool> listener_failed{false};
+  std::mutex stop_mutex;
+  std::condition_variable stop_cv;
   g_stop_flag = &stop;
   std::signal(SIGINT, HandleSignal);
   std::signal(SIGTERM, HandleSignal);
@@ -385,25 +405,33 @@ int main(int argc, char** argv) {
   }
 
   std::thread resp_thread([&]() {
-    RunRespServer(options->config.listen_port, store, metrics, stop);
+    RunRespServer(options->config.listen_port, store, metrics, stop,
+                  listener_failed, stop_cv);
   });
   std::thread metrics_thread([&]() {
-    RunMetricsServer(options->config.metrics_port, metrics, stop);
+    RunMetricsServer(options->config.metrics_port, metrics, stop,
+                     listener_failed, stop_cv);
   });
   std::thread grpc_thread([&]() { server->Wait(); });
 
   std::optional<std::thread> timer_thread;
   if (options->run_for.has_value()) {
     auto run_for = *options->run_for;
-    timer_thread.emplace([run_for, &stop]() {
-      std::this_thread::sleep_for(run_for);
-      stop.store(true);
+    timer_thread.emplace([run_for, &stop, &stop_mutex, &stop_cv]() {
+      std::unique_lock<std::mutex> lock(stop_mutex);
+      if (stop_cv.wait_for(lock, run_for, [&stop]() { return stop.load(); })) {
+        return;
+      }
+      RequestStop(stop, stop_cv);
     });
   }
 
   while (!stop.load()) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::unique_lock<std::mutex> lock(stop_mutex);
+    stop_cv.wait_for(lock, std::chrono::milliseconds(50),
+                     [&stop]() { return stop.load(); });
   }
+  stop_cv.notify_all();
 
   server->Shutdown();
   if (grpc_thread.joinable()) {
@@ -418,5 +446,5 @@ int main(int argc, char** argv) {
   if (timer_thread && timer_thread->joinable()) {
     timer_thread->join();
   }
-  return 0;
+  return listener_failed.load() ? 1 : 0;
 }
