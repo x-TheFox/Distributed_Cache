@@ -35,3 +35,11 @@ telemetry. Each event uses a `type` discriminator alongside required fields.
   "ts": 1700000000
 }
 ```
+
+## dashboard_stream
+
+The dashboard visualizer consumes these payloads over a WebSocket stream. The
+default local endpoint is `ws://localhost:8080/ws` and can be overridden with
+`NEXT_PUBLIC_CLUSTER_WS_URL` in the dashboard app. For demos and tests, the
+dashboard also exposes `GET /api/mock-events` returning an ordered list of the
+same event types for the failover simulation timeline.

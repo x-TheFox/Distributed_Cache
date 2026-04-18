@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-import type { ClusterEvent } from "@/contracts/cluster-events";
+import { parseClusterEvent, type ClusterEvent } from "@/contracts/cluster-events";
 import { LatencyChart } from "@/components/metrics/latency-chart";
 import { MetricCards } from "@/components/metrics/metric-cards";
+import { SimulationTimeline } from "@/components/simulations/simulation-timeline";
 import { TopologyMap, type NodeState, type ShardState } from "@/components/topology/topology-map";
 import { createClusterSocket } from "@/lib/ws-client";
 
@@ -50,6 +51,47 @@ export default function Page() {
   const [replicaLagMs, setReplicaLagMs] = useState(8);
   const [opsPerSec, setOpsPerSec] = useState(defaultOpsPerSec);
   const [latencySamples, setLatencySamples] = useState(defaultLatencySamples);
+  const [simulationEvents, setSimulationEvents] = useState<ClusterEvent[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadSimulationEvents = async () => {
+      try {
+        const response = await fetch("/api/mock-events", {
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          return;
+        }
+        const payload = await response.json();
+        if (!Array.isArray(payload)) {
+          return;
+        }
+        const events: ClusterEvent[] = [];
+        for (const event of payload) {
+          try {
+            events.push(parseClusterEvent(event));
+          } catch {
+            // Ignore malformed events.
+          }
+        }
+        if (!cancelled) {
+          setSimulationEvents(events);
+        }
+      } catch {
+        // Ignore network errors during startup.
+      }
+    };
+
+    loadSimulationEvents();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, []);
 
   useEffect(() => {
     const socketUrl =
@@ -129,6 +171,10 @@ export default function Page() {
       <section>
         <h2>Cluster Topology</h2>
         <TopologyMap nodes={nodes} shards={shards} />
+      </section>
+      <section>
+        <h2>Failover Simulation</h2>
+        <SimulationTimeline events={simulationEvents} />
       </section>
     </main>
   );

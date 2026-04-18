@@ -87,7 +87,7 @@ export function MetricCards({ opsPerSec, p99Ms, replicaLagMs }: MetricCardsProps
           status={latencyWarning ? "warning" : "ok"}
         />
         <MetricCard
-          label="Replica lag"
+          label="Replica Lag"
           value={formatMs(replicaLagMs, 0)}
           threshold="Target ≤ 20 ms"
           status={replicaLagWarning ? "warning" : "ok"}
