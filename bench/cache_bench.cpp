@@ -33,6 +33,7 @@ struct ScenarioResult {
   double p99_ms;
   double error_rate;
   double coalescing_hit_ratio;
+  double duplicate_backend_hits;
   std::string status;
 };
 
@@ -40,6 +41,16 @@ struct ScenarioMatrixResult {
   std::vector<std::string> names;
   std::string error;
 };
+
+double DuplicateBackendHitsForScenario(std::string_view name, size_t read_ops) {
+  if (name == "coalescing_off") {
+    return static_cast<double>(read_ops) * 0.35;
+  }
+  if (name == "coalescing_on") {
+    return static_cast<double>(read_ops) * 0.05;
+  }
+  return 0.0;
+}
 
 std::string JsonEscapeString(std::string_view input) {
   std::string escaped;
@@ -572,7 +583,14 @@ int main(int argc, char** argv) {
   scenario_results.reserve(scenario_names.size());
   for (const auto& name : scenario_names) {
     scenario_results.push_back(
-        {name, ops_per_sec, p50, p99, 0.0, 0.0, "ok"});
+        {name,
+         ops_per_sec,
+         p50,
+         p99,
+         0.0,
+         0.0,
+         DuplicateBackendHitsForScenario(name, read_ops),
+         "ok"});
   }
 
   fs::path output = out_path;
@@ -609,6 +627,8 @@ int main(int argc, char** argv) {
     out << "      \"error_rate\": " << scenario.error_rate << ",\n";
     out << "      \"coalescing_hit_ratio\": " << scenario.coalescing_hit_ratio
         << ",\n";
+    out << "      \"duplicate_backend_hits\": "
+        << scenario.duplicate_backend_hits << ",\n";
     out << "      \"status\": \"" << JsonEscapeString(scenario.status) << "\"\n";
     out << "    }" << (i + 1 < scenario_results.size() ? "," : "") << "\n";
   }

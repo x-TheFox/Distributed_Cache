@@ -70,6 +70,7 @@ def test_benchmark_scenario_entries_contain_required_fields():
         "p99_ms",
         "error_rate",
         "coalescing_hit_ratio",
+        "duplicate_backend_hits",
         "status",
     }
     for scenario in data["scenarios"]:

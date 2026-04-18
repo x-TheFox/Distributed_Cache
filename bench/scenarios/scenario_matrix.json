@@ -7,6 +7,8 @@
     { "name": "rebalance", "description": "Shard rebalance pressure" },
     { "name": "failover", "description": "Node failover behavior" },
     { "name": "thundering_herd", "description": "Thundering herd baseline" },
+    { "name": "coalescing_off", "description": "Coalescing disabled" },
+    { "name": "coalescing_on", "description": "Coalescing enabled" },
     { "name": "coalescing_ab", "description": "Coalescing A/B comparison" }
   ]
 }

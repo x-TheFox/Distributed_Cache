@@ -34,12 +34,9 @@ def _load_output() -> dict:
 def test_coalescing_ab_shows_duplicate_work_reduction() -> None:
     data = _load_output()
     scenarios = {s["name"]: s for s in data["scenarios"]}
-    if "coalescing_off" in scenarios and "coalescing_on" in scenarios:
-        assert (
-            scenarios["coalescing_on"]["duplicate_backend_hits"]
-            < scenarios["coalescing_off"]["duplicate_backend_hits"]
-        )
-    else:
-        coalescing = scenarios.get("coalescing_ab")
-        assert coalescing is not None
-        assert 0.0 <= coalescing["coalescing_hit_ratio"] <= 1.0
+    assert "coalescing_off" in scenarios
+    assert "coalescing_on" in scenarios
+    assert (
+        scenarios["coalescing_on"]["duplicate_backend_hits"]
+        < scenarios["coalescing_off"]["duplicate_backend_hits"]
+    )
