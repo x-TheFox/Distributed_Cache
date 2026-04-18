@@ -1,6 +1,7 @@
 import json
 import re
 import subprocess
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,26 @@ BENCH_BIN = ROOT / "build/bench/cache_bench"
 SCENARIO_MATRIX = ROOT / "bench/scenarios/scenario_matrix.json"
 BENCH_WORKFLOW = ROOT / ".github/workflows/benchmarks.yml"
 MIN_SCENARIO_REQUESTS = 1_000_000
+
+
+def _expected_weighted_requests(weights: list[int], ops_total: int) -> list[int]:
+    if not weights:
+        return []
+    weight_sum = sum(weights)
+    if weight_sum == 0:
+        base = ops_total // len(weights)
+        remainder = ops_total % len(weights)
+        return [base + (1 if i < remainder else 0) for i in range(len(weights))]
+    quotas = [Fraction(ops_total) * weight / weight_sum for weight in weights]
+    allocations = [int(quota) for quota in quotas]
+    remainder = ops_total - sum(allocations)
+    fractions = [
+        (index, quota - allocations[index]) for index, quota in enumerate(quotas)
+    ]
+    fractions.sort(key=lambda item: (-item[1], item[0]))
+    for i in range(remainder):
+        allocations[fractions[i % len(weights)][0]] += 1
+    return allocations
 
 
 def _run_bench(
@@ -133,14 +154,26 @@ def test_benchmark_matrix_output_has_required_scenarios():
 def test_benchmark_output_uses_ops_total_for_requests():
     original = SCENARIO_MATRIX.read_text()
     matrix = _load_matrix()
-    for scenario in matrix["scenarios"]:
-        scenario["requests"] = MIN_SCENARIO_REQUESTS + 4242
+    weights: list[int] = []
+    for idx, scenario in enumerate(matrix["scenarios"]):
+        weight = idx + 1
+        scenario["requests"] = weight
+        weights.append(weight)
     SCENARIO_MATRIX.write_text(json.dumps(matrix, indent=2))
     try:
         data = _load_output(extra_args=["--ops", "5000"])
         assert data["ops_total"] == 5000
         total_requests = sum(scenario["requests"] for scenario in data["scenarios"])
         assert total_requests == data["ops_total"]
+        expected = _expected_weighted_requests(weights, data["ops_total"])
+        expected_by_name = {
+            scenario["name"]: expected[idx]
+            for idx, scenario in enumerate(matrix["scenarios"])
+        }
+        for scenario in data["scenarios"]:
+            assert scenario["requests"] == expected_by_name[scenario["name"]]
+        for idx in range(1, len(expected)):
+            assert expected[idx] >= expected[idx - 1]
     finally:
         SCENARIO_MATRIX.write_text(original)
         if BENCH_OUTPUT.exists():

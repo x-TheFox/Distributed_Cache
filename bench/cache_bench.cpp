@@ -5,6 +5,7 @@
 #include <atomic>
 #include <barrier>
 #include <chrono>
+#include <cmath>
 #include <cctype>
 #include <ctime>
 #include <filesystem>
@@ -559,14 +560,14 @@ bool SumScenarioRequests(const std::vector<ScenarioSpec>& scenarios,
 std::vector<size_t> DistributeScenarioRequests(
     const std::vector<ScenarioSpec>& scenarios, size_t total_ops) {
   std::vector<size_t> requests(scenarios.size(), 0);
-  if (scenarios.empty()) {
+  if (scenarios.empty() || total_ops == 0) {
     return requests;
   }
-  size_t weight_sum = 0;
+  long double weight_sum = 0.0L;
   for (const auto& scenario : scenarios) {
-    weight_sum += scenario.requests;
+    weight_sum += static_cast<long double>(scenario.requests);
   }
-  if (weight_sum == 0) {
+  if (weight_sum <= 0.0L) {
     size_t base = total_ops / scenarios.size();
     size_t remainder = total_ops % scenarios.size();
     for (size_t i = 0; i < scenarios.size(); ++i) {
@@ -574,18 +575,69 @@ std::vector<size_t> DistributeScenarioRequests(
     }
     return requests;
   }
+  struct FractionalPart {
+    size_t index;
+    long double fraction;
+  };
+  std::vector<FractionalPart> fractional_parts;
+  fractional_parts.reserve(scenarios.size());
   size_t allocated = 0;
   for (size_t i = 0; i < scenarios.size(); ++i) {
-    long double share =
+    long double quota =
         (static_cast<long double>(total_ops) *
          static_cast<long double>(scenarios[i].requests)) /
-        static_cast<long double>(weight_sum);
-    requests[i] = static_cast<size_t>(share);
-    allocated += requests[i];
+        weight_sum;
+    long double base_ld = std::floor(quota);
+    if (base_ld < 0.0L) {
+      base_ld = 0.0L;
+    }
+    if (base_ld > static_cast<long double>(total_ops)) {
+      base_ld = static_cast<long double>(total_ops);
+    }
+    size_t base = static_cast<size_t>(base_ld);
+    if (base > total_ops - allocated) {
+      base = total_ops - allocated;
+    }
+    requests[i] = base;
+    allocated += base;
+    long double fraction = quota - static_cast<long double>(base);
+    if (fraction < 0.0L) {
+      fraction = 0.0L;
+    }
+    fractional_parts.push_back({i, fraction});
   }
-  size_t remainder = total_ops - allocated;
-  for (size_t i = 0; i < remainder; ++i) {
-    requests[i % scenarios.size()] += 1;
+  if (allocated == total_ops) {
+    return requests;
+  }
+  if (allocated < total_ops) {
+    size_t remainder = total_ops - allocated;
+    std::sort(
+        fractional_parts.begin(), fractional_parts.end(),
+        [](const FractionalPart& a, const FractionalPart& b) {
+          if (a.fraction == b.fraction) {
+            return a.index < b.index;
+          }
+          return a.fraction > b.fraction;
+        });
+    for (size_t i = 0; i < remainder; ++i) {
+      requests[fractional_parts[i % fractional_parts.size()].index] += 1;
+    }
+    return requests;
+  }
+  size_t excess = allocated - total_ops;
+  std::sort(
+      fractional_parts.begin(), fractional_parts.end(),
+      [](const FractionalPart& a, const FractionalPart& b) {
+        if (a.fraction == b.fraction) {
+          return a.index < b.index;
+        }
+        return a.fraction < b.fraction;
+      });
+  for (size_t i = 0; i < excess; ++i) {
+    size_t idx = fractional_parts[i % fractional_parts.size()].index;
+    if (requests[idx] > 0) {
+      requests[idx] -= 1;
+    }
   }
   return requests;
 }
