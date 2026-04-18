@@ -281,6 +281,29 @@ std::optional<std::string> QueryMetrics(int port) {
       port,
       "GET /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
 }
+
+bool IsExecutableFile(const std::filesystem::path& path) {
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec) ||
+      !std::filesystem::is_regular_file(path, ec)) {
+    return false;
+  }
+  return ::access(path.c_str(), X_OK) == 0;
+}
+
+std::filesystem::path RepoRoot() {
+  auto current = std::filesystem::current_path();
+  for (int i = 0; i < 3; ++i) {
+    if (std::filesystem::exists(current / "CMakeLists.txt")) {
+      return current;
+    }
+    if (!current.has_parent_path()) {
+      break;
+    }
+    current = current.parent_path();
+  }
+  return std::filesystem::current_path();
+}
 }  // namespace
 
 TEST(Bootstrap, DefaultConfigIsValid) {
@@ -293,6 +316,17 @@ TEST(Bootstrap, DefaultConfigIsValid) {
   EXPECT_GT(cfg.virtual_nodes, 0);
   EXPECT_GT(cfg.max_resp_clients, 0);
   EXPECT_GT(cfg.resp_idle_timeout_ms, 0);
+}
+
+TEST(Bootstrap, DevScriptsExistAndAreExecutable) {
+  const auto root = RepoRoot();
+  const std::vector<std::filesystem::path> scripts = {
+      root / "scripts/dev-up.sh", root / "scripts/dev-down.sh",
+      root / "scripts/dashboard-capture.sh"};
+  for (const auto& script : scripts) {
+    EXPECT_TRUE(IsExecutableFile(script))
+        << script << " is missing or not executable";
+  }
 }
 
 TEST(Bootstrap, CacheServerDryRunSucceeds) {

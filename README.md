@@ -54,3 +54,27 @@ python3 bench/render_svg.py bench/out/latest.json docs/generated/bench.svg
 - `tests/` — unit + integration tests (C++/pytest)
 - `bench/` — benchmark harness + SVG renderer
 - `docs/` — architecture specs and plans
+
+## Local orchestration scripts
+
+Run the full stack locally (builds cache_server if needed):
+
+```bash
+scripts/dev-up.sh
+```
+
+Overrides (env): `CACHE_RESP_PORT`, `CACHE_GRPC_PORT`, `CACHE_METRICS_PORT`,
+`CACHE_VIRTUAL_NODES`, `CACHE_SHARD_COUNT`, `CACHE_NODE_ID`, `DASHBOARD_PORT`,
+`DASHBOARD_WS_URL`, `DASHBOARD_SOURCE`, `DEV_RUNTIME_DIR`.
+
+Stop services and keep logs in `build/dev`:
+
+```bash
+scripts/dev-down.sh
+```
+
+Capture a dashboard screenshot (requires dashboard running):
+
+```bash
+scripts/dashboard-capture.sh
+```
