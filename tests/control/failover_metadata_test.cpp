@@ -49,4 +49,19 @@ TEST(FailoverMetadata, GossipRevivesReplicaForNextFailover) {
   metadata.OnHeartbeatTimeout("node-b", 300);
   EXPECT_EQ(metadata.LeaderForShard("shard-1"), "node-a");
 }
+
+TEST(FailoverMetadata, StaleTimeoutDoesNotTriggerFailover) {
+  RaftMetadataAdapter metadata;
+  metadata.RegisterNode("node-a", 100);
+  metadata.RegisterNode("node-b", 100);
+  metadata.AddShard("shard-1", {"node-a", "node-b"});
+
+  metadata.RecordHeartbeat("node-a", 300);
+  metadata.OnHeartbeatTimeout("node-a", 200);
+
+  EXPECT_EQ(metadata.LeaderForShard("shard-1"), "node-a");
+  auto health = metadata.GetNodeHealth("node-a");
+  ASSERT_TRUE(health.has_value());
+  EXPECT_TRUE(health->alive);
+}
 }  // namespace cache::control

@@ -57,4 +57,17 @@ TEST(HeartbeatManager, TimeoutAllowsFreshGossipRevival) {
   EXPECT_TRUE(health->alive);
   EXPECT_EQ(health->last_heartbeat_ms, 200u);
 }
+
+TEST(HeartbeatManager, StaleTimeoutAfterHeartbeatKeepsNodeAlive) {
+  HeartbeatManager manager;
+  manager.RegisterNode("node-a", 100);
+
+  manager.RecordHeartbeat("node-a", 200);
+  manager.OnHeartbeatTimeout("node-a", 150);
+
+  auto health = manager.GetNodeHealth("node-a");
+  ASSERT_TRUE(health.has_value());
+  EXPECT_TRUE(health->alive);
+  EXPECT_EQ(health->last_heartbeat_ms, 200u);
+}
 }  // namespace cache::control

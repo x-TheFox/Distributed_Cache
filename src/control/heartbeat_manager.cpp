@@ -34,6 +34,9 @@ void HeartbeatManager::OnHeartbeatTimeout(const std::string& node_id,
   std::lock_guard<std::mutex> lock(mutex_);
   auto& entry = nodes_[node_id];
   auto& last_observed = last_observation_ms_[node_id];
+  if (!entry.node_id.empty() && timeout_ms < last_observed) {
+    return;
+  }
   entry.node_id = node_id;
   entry.alive = false;
   if (timeout_ms > last_observed) {
