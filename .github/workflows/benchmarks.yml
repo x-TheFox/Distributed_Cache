@@ -2,6 +2,8 @@ name: Benchmarks
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
   push:
     paths:
       - "bench/**"
@@ -15,6 +17,9 @@ permissions:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile: [nightly]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,7 +52,7 @@ jobs:
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-artifacts
+          name: benchmark-artifacts-${{ matrix.profile }}
           path: |
             bench/out/latest.json
             docs/generated/bench.svg

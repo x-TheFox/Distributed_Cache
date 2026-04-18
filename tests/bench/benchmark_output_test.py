@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -8,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BENCH_OUTPUT = ROOT / "bench/out/latest.json"
 BENCH_BIN = ROOT / "build/bench/cache_bench"
 SCENARIO_MATRIX = ROOT / "bench/scenarios/scenario_matrix.json"
+BENCH_WORKFLOW = ROOT / ".github/workflows/benchmarks.yml"
 
 
 def _run_bench(check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -161,3 +163,13 @@ def test_svg_contains_scenario_rows(tmp_path: Path):
     assert "Scenario Scoreboard" in svg
     assert "read_heavy" in svg
     assert "thundering_herd" in svg
+
+
+def test_benchmark_workflow_contains_nightly_schedule_and_artifacts():
+    workflow = BENCH_WORKFLOW.read_text()
+    assert 'cron: "0 3 * * *"' in workflow
+    assert re.search(
+        r"strategy:\n\s+matrix:\n\s+profile:\s+\[nightly\]",
+        workflow,
+    )
+    assert "name: benchmark-artifacts-${{ matrix.profile }}" in workflow
