@@ -19,6 +19,29 @@ TEST(FailoverMetadata, LeaderOwnershipChangesOnHeartbeatLoss) {
   EXPECT_FALSE(health->alive);
 }
 
+TEST(FailoverMetadata, AddShardSelectsHealthyReplica) {
+  RaftMetadataAdapter metadata;
+  metadata.RegisterNode("node-a", 100);
+  metadata.RegisterNode("node-b", 100);
+  metadata.OnHeartbeatTimeout("node-a", 200);
+
+  metadata.AddShard("shard-1", {"node-a", "node-b"});
+
+  EXPECT_EQ(metadata.LeaderForShard("shard-1"), "node-b");
+}
+
+TEST(FailoverMetadata, AddShardLeavesLeaderEmptyWhenAllReplicasDead) {
+  RaftMetadataAdapter metadata;
+  metadata.RegisterNode("node-a", 100);
+  metadata.RegisterNode("node-b", 100);
+  metadata.OnHeartbeatTimeout("node-a", 200);
+  metadata.OnHeartbeatTimeout("node-b", 200);
+
+  metadata.AddShard("shard-1", {"node-a", "node-b"});
+
+  EXPECT_TRUE(metadata.LeaderForShard("shard-1").empty());
+}
+
 TEST(FailoverMetadata, LeaderClearsWhenNoHealthyReplica) {
   RaftMetadataAdapter metadata;
   metadata.RegisterNode("node-a", 100);

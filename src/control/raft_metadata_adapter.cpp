@@ -14,8 +14,8 @@ void RaftMetadataAdapter::RecordHeartbeat(const std::string& node_id,
 void RaftMetadataAdapter::AddShard(const std::string& shard_id,
                                    const std::vector<std::string>& replicas) {
   std::lock_guard<std::mutex> lock(mutex_);
-  ShardMetadata metadata{replicas, replicas.empty() ? std::string()
-                                                    : replicas.front()};
+  ShardMetadata metadata{replicas, std::string()};
+  ElectLeaderIfNeeded(metadata);
   shards_[shard_id] = std::move(metadata);
 }
 
