@@ -110,3 +110,35 @@ def test_benchmark_fails_on_invalid_matrix_file():
         SCENARIO_MATRIX.write_text(original)
         if BENCH_OUTPUT.exists():
             BENCH_OUTPUT.unlink()
+
+
+def test_benchmark_fails_on_invalid_escape_in_matrix():
+    original = SCENARIO_MATRIX.read_text()
+    SCENARIO_MATRIX.write_text('{"scenarios":[{"name":"bad\\q"}]}')
+    try:
+        result = _run_bench(check=False)
+        assert result.returncode != 0
+        message = (result.stderr + result.stdout).lower()
+        assert "scenario" in message and "matrix" in message
+    finally:
+        SCENARIO_MATRIX.write_text(original)
+        if BENCH_OUTPUT.exists():
+            BENCH_OUTPUT.unlink()
+
+
+def test_benchmark_output_escapes_scenario_names():
+    original = SCENARIO_MATRIX.read_text()
+    matrix = _load_matrix()
+    special_name = 'scenario "escape" \\ newline\n'
+    matrix["scenarios"].append(
+        {"name": special_name, "description": "Needs escaping in JSON output"}
+    )
+    SCENARIO_MATRIX.write_text(json.dumps(matrix, indent=2))
+    try:
+        data = _load_output()
+        names = {s["name"] for s in data["scenarios"]}
+        assert special_name in names
+    finally:
+        SCENARIO_MATRIX.write_text(original)
+        if BENCH_OUTPUT.exists():
+            BENCH_OUTPUT.unlink()

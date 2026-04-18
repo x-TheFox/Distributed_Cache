@@ -41,6 +41,47 @@ struct ScenarioMatrixResult {
   std::string error;
 };
 
+std::string JsonEscapeString(std::string_view input) {
+  std::string escaped;
+  escaped.reserve(input.size());
+  for (unsigned char ch : input) {
+    switch (ch) {
+      case '"':
+        escaped += "\\\"";
+        break;
+      case '\\':
+        escaped += "\\\\";
+        break;
+      case '\b':
+        escaped += "\\b";
+        break;
+      case '\f':
+        escaped += "\\f";
+        break;
+      case '\n':
+        escaped += "\\n";
+        break;
+      case '\r':
+        escaped += "\\r";
+        break;
+      case '\t':
+        escaped += "\\t";
+        break;
+      default:
+        if (ch < 0x20) {
+          constexpr char kHex[] = "0123456789abcdef";
+          escaped += "\\u00";
+          escaped.push_back(kHex[ch >> 4]);
+          escaped.push_back(kHex[ch & 0x0F]);
+        } else {
+          escaped.push_back(static_cast<char>(ch));
+        }
+        break;
+    }
+  }
+  return escaped;
+}
+
 class JsonReader {
  public:
   explicit JsonReader(std::string_view input) : input_(input) {}
@@ -100,17 +141,17 @@ class JsonReader {
             out.push_back('\t');
             break;
           case 'u':
-            if (pos_ + 4 > input_.size()) {
+            if (!ParseUnicodeEscape(out)) {
               return false;
             }
-            pos_ += 4;
-            out.push_back('?');
             break;
           default:
-            out.push_back(esc);
-            break;
+            return false;
         }
       } else {
+        if (static_cast<unsigned char>(ch) < 0x20) {
+          return false;
+        }
         out.push_back(ch);
       }
     }
@@ -281,6 +322,77 @@ class JsonReader {
 
   std::string_view input_;
   size_t pos_ = 0;
+
+  static bool AppendUtf8(uint32_t codepoint, std::string& out) {
+    if (codepoint <= 0x7F) {
+      out.push_back(static_cast<char>(codepoint));
+    } else if (codepoint <= 0x7FF) {
+      out.push_back(static_cast<char>(0xC0 | (codepoint >> 6)));
+      out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    } else if (codepoint <= 0xFFFF) {
+      out.push_back(static_cast<char>(0xE0 | (codepoint >> 12)));
+      out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+      out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    } else if (codepoint <= 0x10FFFF) {
+      out.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
+      out.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+      out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+      out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  bool ParseUnicodeEscape(std::string& out) {
+    uint32_t codepoint = 0;
+    if (!ParseHex4(codepoint)) {
+      return false;
+    }
+    if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
+      if (pos_ + 6 > input_.size()) {
+        return false;
+      }
+      if (input_[pos_] != '\\' || input_[pos_ + 1] != 'u') {
+        return false;
+      }
+      pos_ += 2;
+      uint32_t low = 0;
+      if (!ParseHex4(low)) {
+        return false;
+      }
+      if (low < 0xDC00 || low > 0xDFFF) {
+        return false;
+      }
+      codepoint =
+          0x10000 + ((codepoint - 0xD800) << 10) + (low - 0xDC00);
+    } else if (codepoint >= 0xDC00 && codepoint <= 0xDFFF) {
+      return false;
+    }
+    return AppendUtf8(codepoint, out);
+  }
+
+  bool ParseHex4(uint32_t& codepoint) {
+    if (pos_ + 4 > input_.size()) {
+      return false;
+    }
+    uint32_t value = 0;
+    for (int i = 0; i < 4; ++i) {
+      char ch = input_[pos_++];
+      value <<= 4;
+      if (ch >= '0' && ch <= '9') {
+        value |= static_cast<uint32_t>(ch - '0');
+      } else if (ch >= 'a' && ch <= 'f') {
+        value |= static_cast<uint32_t>(10 + ch - 'a');
+      } else if (ch >= 'A' && ch <= 'F') {
+        value |= static_cast<uint32_t>(10 + ch - 'A');
+      } else {
+        return false;
+      }
+    }
+    codepoint = value;
+    return true;
+  }
 };
 
 bool ParseScenarioMatrix(std::string_view contents,
@@ -475,7 +587,7 @@ int main(int argc, char** argv) {
 
   out << std::fixed << std::setprecision(3);
   out << "{\n";
-  out << "  \"timestamp\": \"" << NowIso8601() << "\",\n";
+  out << "  \"timestamp\": \"" << JsonEscapeString(NowIso8601()) << "\",\n";
   out << "  \"ops_total\": " << config.ops << ",\n";
   out << "  \"duration_ms\": " << duration_ms << ",\n";
   out << "  \"ops_per_sec\": " << ops_per_sec << ",\n";
@@ -490,14 +602,14 @@ int main(int argc, char** argv) {
   for (size_t i = 0; i < scenario_results.size(); ++i) {
     const auto& scenario = scenario_results[i];
     out << "    {\n";
-    out << "      \"name\": \"" << scenario.name << "\",\n";
+    out << "      \"name\": \"" << JsonEscapeString(scenario.name) << "\",\n";
     out << "      \"ops_per_sec\": " << scenario.ops_per_sec << ",\n";
     out << "      \"p50_ms\": " << scenario.p50_ms << ",\n";
     out << "      \"p99_ms\": " << scenario.p99_ms << ",\n";
     out << "      \"error_rate\": " << scenario.error_rate << ",\n";
     out << "      \"coalescing_hit_ratio\": " << scenario.coalescing_hit_ratio
         << ",\n";
-    out << "      \"status\": \"" << scenario.status << "\"\n";
+    out << "      \"status\": \"" << JsonEscapeString(scenario.status) << "\"\n";
     out << "    }" << (i + 1 < scenario_results.size() ? "," : "") << "\n";
   }
   out << "  ]\n";
