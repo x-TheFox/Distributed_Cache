@@ -32,23 +32,24 @@ bool ParseNumber(std::string_view text, long long* value) {
 }
 }  // namespace
 
-RESPCommand ParseRESP(std::string_view frame) {
+RESPParseResult ParseRESP(std::string_view frame) {
+  RESPParseResult result;
   RESPCommand cmd;
   constexpr long long kMaxArrayElements = 1024;
   constexpr long long kMaxBulkLength = 1024 * 1024;
   size_t offset = 0;
   std::string_view line;
   if (!ReadLine(frame, &offset, &line)) {
-    return cmd;
+    return result;
   }
   if (line.empty() || line.front() != '*') {
-    return cmd;
+    return result;
   }
 
   long long count = 0;
   if (!ParseNumber(line.substr(1), &count) || count <= 0 ||
       count > kMaxArrayElements) {
-    return cmd;
+    return result;
   }
 
   std::vector<std::string> parts;
@@ -56,29 +57,29 @@ RESPCommand ParseRESP(std::string_view frame) {
 
   for (long long i = 0; i < count; ++i) {
     if (!ReadLine(frame, &offset, &line)) {
-      return RESPCommand{};
+      return result;
     }
     if (line.empty() || line.front() != '$') {
-      return RESPCommand{};
+      return result;
     }
     long long length = 0;
     if (!ParseNumber(line.substr(1), &length) || length < 0 ||
         length > kMaxBulkLength) {
-      return RESPCommand{};
+      return result;
     }
     if (static_cast<unsigned long long>(length) >
         std::numeric_limits<size_t>::max()) {
-      return RESPCommand{};
+      return result;
     }
     auto remaining = frame.size() - offset;
     auto length_size = static_cast<size_t>(length);
     if (remaining < 2 || length_size > remaining - 2) {
-      return RESPCommand{};
+      return result;
     }
     parts.emplace_back(frame.substr(offset, length_size));
     offset += length_size;
     if (frame.substr(offset, 2) != "\r\n") {
-      return RESPCommand{};
+      return result;
     }
     offset += 2;
   }
@@ -89,6 +90,8 @@ RESPCommand ParseRESP(std::string_view frame) {
       cmd.args.assign(parts.begin() + 1, parts.end());
     }
   }
-  return cmd;
+  result.command = std::move(cmd);
+  result.bytes_consumed = offset;
+  return result;
 }
 }  // namespace cache::protocol::resp

@@ -31,6 +31,7 @@ constexpr size_t kMaxRespFrameBytes = 1024 * 1024;
 constexpr int kListenBacklog = 64;
 constexpr int kSelectTimeoutMs = 200;
 constexpr int kSocketTimeoutMs = 200;
+constexpr int kRespIdleTimeoutMs = 2000;
 constexpr int kMaxPort = 65535;
 
 std::atomic<bool>* g_stop_flag = nullptr;
@@ -227,6 +228,7 @@ void HandleRespClient(int client_fd, cache::core::ConcurrentStore& store,
   ApplySocketTimeout(client_fd);
   std::string buffer;
   buffer.reserve(1024);
+  auto last_activity = std::chrono::steady_clock::now();
   while (!stop.load()) {
     char chunk[4096];
     auto read = ::recv(client_fd, chunk, sizeof(chunk), 0);
@@ -234,19 +236,37 @@ void HandleRespClient(int client_fd, cache::core::ConcurrentStore& store,
       return;
     }
     if (read < 0) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+      if (errno == EINTR) {
+        continue;
+      }
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_activity >
+            std::chrono::milliseconds(kRespIdleTimeoutMs)) {
+          return;
+        }
         continue;
       }
       return;
     }
+    last_activity = std::chrono::steady_clock::now();
     buffer.append(chunk, static_cast<size_t>(read));
-    auto cmd = cache::protocol::resp::ParseRESP(buffer);
-    if (!cmd.name.empty()) {
-      auto response = cache::protocol::resp::ExecuteCommand(cmd, store);
+    while (!stop.load()) {
+      auto parsed = cache::protocol::resp::ParseRESP(buffer);
+      if (parsed.command.name.empty() || parsed.bytes_consumed == 0) {
+        break;
+      }
+      auto response =
+          cache::protocol::resp::ExecuteCommand(parsed.command, store);
       metrics.IncrementCounter("cache_resp_requests_total", 1.0,
                                "Total RESP requests");
-      SendAll(client_fd, response);
-      return;
+      if (!SendAll(client_fd, response)) {
+        return;
+      }
+      buffer.erase(0, parsed.bytes_consumed);
+      if (buffer.empty()) {
+        break;
+      }
     }
     if (buffer.size() > kMaxRespFrameBytes) {
       SendAll(client_fd, "-ERR invalid command\r\n");
@@ -297,8 +317,10 @@ void RunRespServer(int port, cache::core::ConcurrentStore& store,
     if (client_fd < 0) {
       continue;
     }
-    HandleRespClient(client_fd, store, metrics, stop);
-    ::close(client_fd);
+    std::thread([client_fd, &store, &metrics, &stop]() {
+      HandleRespClient(client_fd, store, metrics, stop);
+      ::close(client_fd);
+    }).detach();
   }
   ::close(server_fd);
 }

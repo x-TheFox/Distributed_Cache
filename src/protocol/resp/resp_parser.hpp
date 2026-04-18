@@ -14,7 +14,12 @@ struct RESPCommand {
   std::vector<std::string> args;
 };
 
-RESPCommand ParseRESP(std::string_view frame);
+struct RESPParseResult {
+  RESPCommand command;
+  size_t bytes_consumed{0};
+};
+
+RESPParseResult ParseRESP(std::string_view frame);
 std::string ExecuteCommand(const RESPCommand& cmd,
                            cache::core::ConcurrentStore& store);
 }  // namespace cache::protocol::resp

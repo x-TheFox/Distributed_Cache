@@ -59,7 +59,7 @@ void ConcurrentStore::EnforceCapacity() {
   }
 
   auto total_entries = total_entries_.load(std::memory_order_relaxed);
-  if (total_entries < max_entries_) {
+  if (total_entries <= max_entries_) {
     return;
   }
 
@@ -85,7 +85,7 @@ void ConcurrentStore::EnforceCapacity() {
   }
 
   auto protected_entries = protected_entries_.load(std::memory_order_relaxed);
-  while (total_entries >= max_entries_ &&
+  while (total_entries > max_entries_ &&
          protected_entries > protected_entries_limit_) {
     auto victim_key = SelectVictimKey(true);
     if (victim_key.empty()) {

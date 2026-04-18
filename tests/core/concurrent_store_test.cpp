@@ -150,3 +150,18 @@ TEST(ConcurrentStore, DoesNotDemoteWithoutPressure) {
   store.Set("e", "v5", std::nullopt);
   EXPECT_EQ(CountProtectedEntries(store), 4u);
 }
+
+TEST(ConcurrentStore, DoesNotDemoteAtCapacity) {
+  cache::core::ConcurrentStore store(1, 4);
+  store.Set("a", "v1", std::nullopt);
+  store.Set("b", "v2", std::nullopt);
+  store.Set("c", "v3", std::nullopt);
+
+  ASSERT_TRUE(store.Get("a").has_value());
+  ASSERT_TRUE(store.Get("b").has_value());
+  ASSERT_TRUE(store.Get("c").has_value());
+  EXPECT_EQ(CountProtectedEntries(store), 3u);
+
+  store.Set("d", "v4", std::nullopt);
+  EXPECT_EQ(CountProtectedEntries(store), 3u);
+}
