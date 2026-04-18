@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 
 import { parseClusterEvent, type ClusterEvent } from "@/contracts/cluster-events";
+import {
+  BenchmarkPanel,
+  type BenchmarkSnapshot
+} from "@/components/metrics/benchmark-panel";
 import { LatencyChart } from "@/components/metrics/latency-chart";
 import { MetricCards } from "@/components/metrics/metric-cards";
 import { SimulationTimeline } from "@/components/simulations/simulation-timeline";
@@ -52,6 +56,9 @@ export default function Page() {
   const [opsPerSec, setOpsPerSec] = useState(defaultOpsPerSec);
   const [latencySamples, setLatencySamples] = useState(defaultLatencySamples);
   const [simulationEvents, setSimulationEvents] = useState<ClusterEvent[]>([]);
+  const [benchmarkSnapshot, setBenchmarkSnapshot] =
+    useState<BenchmarkSnapshot | null>(null);
+  const [benchmarkError, setBenchmarkError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +93,44 @@ export default function Page() {
     };
 
     loadSimulationEvents();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadBenchmarkSnapshot = async () => {
+      try {
+        const response = await fetch("/api/benchmark-snapshot", {
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          if (!cancelled) {
+            setBenchmarkError(
+              payload?.message ?? "Benchmark snapshot unavailable."
+            );
+          }
+          return;
+        }
+        const payload = await response.json();
+        if (!cancelled) {
+          setBenchmarkSnapshot(payload as BenchmarkSnapshot);
+          setBenchmarkError(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setBenchmarkError("Benchmark snapshot unavailable.");
+        }
+      }
+    };
+
+    loadBenchmarkSnapshot();
 
     return () => {
       cancelled = true;
@@ -166,6 +211,12 @@ export default function Page() {
         />
         <div style={{ marginTop: "16px" }}>
           <LatencyChart values={latencySamples} />
+        </div>
+        <div style={{ marginTop: "16px" }}>
+          <BenchmarkPanel
+            snapshot={benchmarkSnapshot}
+            error={benchmarkError}
+          />
         </div>
       </section>
       <section>
