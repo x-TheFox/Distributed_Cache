@@ -25,6 +25,10 @@ add_library(cache_protocol_lib src/protocol/resp/resp_parser.cpp
 target_include_directories(cache_protocol_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(cache_protocol_lib PUBLIC cache_core_lib)
 
+add_library(cache_cluster_lib src/cluster/hash_ring.cpp
+                              src/cluster/shard_router.cpp)
+target_include_directories(cache_cluster_lib PUBLIC ${PROJECT_SOURCE_DIR}/src)
+
 set(CACHE_PROTO ${PROJECT_SOURCE_DIR}/proto/cache.proto)
 get_filename_component(CACHE_PROTO_PATH ${CACHE_PROTO} PATH)
 set(CACHE_PROTO_SRCS ${CMAKE_CURRENT_BINARY_DIR}/cache.pb.cc)
@@ -82,3 +86,7 @@ add_executable(test_grpc_cache_service tests/protocol/grpc_cache_service_test.cp
 target_link_libraries(test_grpc_cache_service PRIVATE gtest_main
                                                      cache_grpc_lib)
 add_test(NAME GRPCCacheService COMMAND test_grpc_cache_service)
+
+add_executable(test_hash_ring tests/cluster/hash_ring_test.cpp)
+target_link_libraries(test_hash_ring PRIVATE gtest_main cache_cluster_lib)
+add_test(NAME HashRing COMMAND test_hash_ring)
