@@ -42,6 +42,7 @@ dist/
 
 # Generated benchmark/docs artifacts
 /bench/out/
-/docs/generated/
+/docs/generated/*
+!/docs/generated/bench.svg
 
 # Task 1 guardrails
