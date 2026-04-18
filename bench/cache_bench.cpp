@@ -24,7 +24,7 @@ using Clock = std::chrono::steady_clock;
 
 namespace {
 struct Config {
-  size_t ops = 20000;
+  size_t ops = 1000000;
   size_t key_space = 2000;
   double read_ratio = 0.8;
   size_t stripes = 8;
@@ -32,6 +32,7 @@ struct Config {
 
 struct ScenarioResult {
   std::string name;
+  size_t requests;
   double ops_per_sec;
   double p50_ms;
   double p99_ms;
@@ -648,6 +649,7 @@ int main(int argc, char** argv) {
     }
     scenario_results.push_back(
         {name,
+         config.ops,
          ops_per_sec,
          p50,
          p99,
@@ -685,6 +687,7 @@ int main(int argc, char** argv) {
     const auto& scenario = scenario_results[i];
     out << "    {\n";
     out << "      \"name\": \"" << JsonEscapeString(scenario.name) << "\",\n";
+    out << "      \"requests\": " << scenario.requests << ",\n";
     out << "      \"ops_per_sec\": " << scenario.ops_per_sec << ",\n";
     out << "      \"p50_ms\": " << scenario.p50_ms << ",\n";
     out << "      \"p99_ms\": " << scenario.p99_ms << ",\n";

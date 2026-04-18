@@ -10,6 +10,7 @@ BENCH_OUTPUT = ROOT / "bench/out/latest.json"
 BENCH_BIN = ROOT / "build/bench/cache_bench"
 SCENARIO_MATRIX = ROOT / "bench/scenarios/scenario_matrix.json"
 BENCH_WORKFLOW = ROOT / ".github/workflows/benchmarks.yml"
+MIN_SCENARIO_REQUESTS = 1_000_000
 
 
 def _run_bench(check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -65,6 +66,7 @@ def test_benchmark_scenario_entries_contain_required_fields():
     data = _load_output()
     required = {
         "name",
+        "requests",
         "ops_per_sec",
         "p50_ms",
         "p99_ms",
@@ -78,11 +80,32 @@ def test_benchmark_scenario_entries_contain_required_fields():
         assert not missing, f"Scenario {scenario.get('name', '<unknown>')} missing {missing}"
 
 
+def test_benchmark_scenario_requests_meet_minimum_threshold():
+    data = _load_output()
+    for scenario in data["scenarios"]:
+        assert (
+            scenario["requests"] >= MIN_SCENARIO_REQUESTS
+        ), f"Scenario {scenario.get('name', '<unknown>')} below request threshold"
+
+
+def test_benchmark_matrix_requires_request_thresholds():
+    matrix = _load_matrix()
+    for scenario in matrix["scenarios"]:
+        assert "requests" in scenario, "Scenario matrix entry missing requests field"
+        assert (
+            scenario["requests"] >= MIN_SCENARIO_REQUESTS
+        ), f"Matrix scenario {scenario.get('name', '<unknown>')} below request threshold"
+
+
 def test_benchmark_matrix_output_has_required_scenarios():
     original = SCENARIO_MATRIX.read_text()
     matrix = _load_matrix()
     matrix["scenarios"].append(
-        {"name": "matrix_override", "description": "Matrix override scenario"}
+        {
+            "name": "matrix_override",
+            "description": "Matrix override scenario",
+            "requests": MIN_SCENARIO_REQUESTS,
+        }
     )
     SCENARIO_MATRIX.write_text(json.dumps(matrix, indent=2))
     try:
@@ -146,7 +169,11 @@ def test_benchmark_output_escapes_scenario_names():
     matrix = _load_matrix()
     special_name = 'scenario "escape" \\ newline\n'
     matrix["scenarios"].append(
-        {"name": special_name, "description": "Needs escaping in JSON output"}
+        {
+            "name": special_name,
+            "description": "Needs escaping in JSON output",
+            "requests": MIN_SCENARIO_REQUESTS,
+        }
     )
     SCENARIO_MATRIX.write_text(json.dumps(matrix, indent=2))
     try:
