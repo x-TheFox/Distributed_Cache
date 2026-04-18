@@ -1,6 +1,9 @@
 #include "core/concurrent_store.hpp"
+#include "core/request_coalescer.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <barrier>
 #include <chrono>
 #include <cctype>
 #include <ctime>
@@ -12,6 +15,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -42,14 +46,54 @@ struct ScenarioMatrixResult {
   std::string error;
 };
 
-double DuplicateBackendHitsForScenario(std::string_view name, size_t read_ops) {
-  if (name == "coalescing_off") {
-    return static_cast<double>(read_ops) * 0.35;
+struct CoalescingBenchmarkResult {
+  double duplicate_backend_hits = 0.0;
+  double coalescing_hit_ratio = 0.0;
+};
+
+CoalescingBenchmarkResult MeasureCoalescingBehavior(bool enabled, size_t bursts,
+                                                    size_t concurrency) {
+  cache::core::RequestCoalescer coalescer;
+  std::atomic<size_t> backend_hits{0};
+  std::atomic<size_t> total_requests{0};
+
+  for (size_t burst = 0; burst < bursts; ++burst) {
+    std::barrier start_gate(static_cast<std::ptrdiff_t>(concurrency));
+    std::vector<std::thread> workers;
+    workers.reserve(concurrency);
+    std::string key = "coalescing_key_" + std::to_string(burst);
+    for (size_t i = 0; i < concurrency; ++i) {
+      workers.emplace_back([&, key]() {
+        start_gate.arrive_and_wait();
+        total_requests.fetch_add(1, std::memory_order_relaxed);
+        auto work = [&backend_hits]() {
+          backend_hits.fetch_add(1, std::memory_order_relaxed);
+          std::this_thread::sleep_for(std::chrono::milliseconds(2));
+          return std::string("payload");
+        };
+        if (enabled) {
+          auto future = coalescer.Execute(key, work);
+          (void)future.get();
+        } else {
+          (void)work();
+        }
+      });
+    }
+    for (auto& worker : workers) {
+      worker.join();
+    }
   }
-  if (name == "coalescing_on") {
-    return static_cast<double>(read_ops) * 0.05;
-  }
-  return 0.0;
+
+  size_t hits = backend_hits.load(std::memory_order_relaxed);
+  size_t requests = total_requests.load(std::memory_order_relaxed);
+  size_t expected_unique_hits = bursts;
+  size_t duplicates =
+      hits > expected_unique_hits ? hits - expected_unique_hits : 0;
+  double coalescing_hit_ratio =
+      requests > 0
+          ? static_cast<double>(requests - hits) / static_cast<double>(requests)
+          : 0.0;
+  return {static_cast<double>(duplicates), coalescing_hit_ratio};
 }
 
 std::string JsonEscapeString(std::string_view input) {
@@ -572,6 +616,17 @@ int main(int argc, char** argv) {
   double p95 = Percentile(latencies_ms, 0.95);
   double p99 = Percentile(latencies_ms, 0.99);
 
+  size_t coalescing_bursts =
+      std::max<size_t>(1, std::min<size_t>(20, config.ops / 1000));
+  size_t coalescing_concurrency =
+      std::max<size_t>(2, std::min<size_t>(8, config.stripes * 2));
+  CoalescingBenchmarkResult coalescing_off =
+      MeasureCoalescingBehavior(false, coalescing_bursts,
+                                coalescing_concurrency);
+  CoalescingBenchmarkResult coalescing_on =
+      MeasureCoalescingBehavior(true, coalescing_bursts,
+                                coalescing_concurrency);
+
   const fs::path matrix_path = fs::path("bench/scenarios/scenario_matrix.json");
   ScenarioMatrixResult scenario_matrix = LoadScenarioMatrix(matrix_path);
   if (!scenario_matrix.error.empty()) {
@@ -582,14 +637,23 @@ int main(int argc, char** argv) {
   std::vector<ScenarioResult> scenario_results;
   scenario_results.reserve(scenario_names.size());
   for (const auto& name : scenario_names) {
+    double coalescing_hit_ratio = 0.0;
+    double duplicate_backend_hits = 0.0;
+    if (name == "coalescing_off") {
+      coalescing_hit_ratio = coalescing_off.coalescing_hit_ratio;
+      duplicate_backend_hits = coalescing_off.duplicate_backend_hits;
+    } else if (name == "coalescing_on") {
+      coalescing_hit_ratio = coalescing_on.coalescing_hit_ratio;
+      duplicate_backend_hits = coalescing_on.duplicate_backend_hits;
+    }
     scenario_results.push_back(
         {name,
          ops_per_sec,
          p50,
          p99,
          0.0,
-         0.0,
-         DuplicateBackendHitsForScenario(name, read_ops),
+         coalescing_hit_ratio,
+         duplicate_backend_hits,
          "ok"});
   }
 
