@@ -2,13 +2,16 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <random>
+#include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -32,6 +35,315 @@ struct ScenarioResult {
   double coalescing_hit_ratio;
   std::string status;
 };
+
+struct ScenarioMatrixResult {
+  std::vector<std::string> names;
+  std::string error;
+};
+
+class JsonReader {
+ public:
+  explicit JsonReader(std::string_view input) : input_(input) {}
+
+  void SkipWhitespace() {
+    while (pos_ < input_.size() &&
+           std::isspace(static_cast<unsigned char>(input_[pos_]))) {
+      ++pos_;
+    }
+  }
+
+  bool Consume(char expected) {
+    SkipWhitespace();
+    if (pos_ >= input_.size() || input_[pos_] != expected) {
+      return false;
+    }
+    ++pos_;
+    return true;
+  }
+
+  bool ParseString(std::string& out) {
+    SkipWhitespace();
+    if (pos_ >= input_.size() || input_[pos_] != '"') {
+      return false;
+    }
+    ++pos_;
+    out.clear();
+    while (pos_ < input_.size()) {
+      char ch = input_[pos_++];
+      if (ch == '"') {
+        return true;
+      }
+      if (ch == '\\') {
+        if (pos_ >= input_.size()) {
+          return false;
+        }
+        char esc = input_[pos_++];
+        switch (esc) {
+          case '"':
+          case '\\':
+          case '/':
+            out.push_back(esc);
+            break;
+          case 'b':
+            out.push_back('\b');
+            break;
+          case 'f':
+            out.push_back('\f');
+            break;
+          case 'n':
+            out.push_back('\n');
+            break;
+          case 'r':
+            out.push_back('\r');
+            break;
+          case 't':
+            out.push_back('\t');
+            break;
+          case 'u':
+            if (pos_ + 4 > input_.size()) {
+              return false;
+            }
+            pos_ += 4;
+            out.push_back('?');
+            break;
+          default:
+            out.push_back(esc);
+            break;
+        }
+      } else {
+        out.push_back(ch);
+      }
+    }
+    return false;
+  }
+
+  bool ParseScenarioArray(std::vector<std::string>& names) {
+    if (!Consume('[')) {
+      return false;
+    }
+    SkipWhitespace();
+    if (Consume(']')) {
+      return true;
+    }
+    while (true) {
+      if (!ParseScenarioObject(names)) {
+        return false;
+      }
+      SkipWhitespace();
+      if (Consume(']')) {
+        return true;
+      }
+      if (!Consume(',')) {
+        return false;
+      }
+    }
+  }
+
+  bool SkipValue() {
+    SkipWhitespace();
+    if (pos_ >= input_.size()) {
+      return false;
+    }
+    char ch = input_[pos_];
+    if (ch == '"') {
+      std::string discard;
+      return ParseString(discard);
+    }
+    if (ch == '{') {
+      return SkipObject();
+    }
+    if (ch == '[') {
+      return SkipArray();
+    }
+    if (ch == 't' && input_.substr(pos_, 4) == "true") {
+      pos_ += 4;
+      return true;
+    }
+    if (ch == 'f' && input_.substr(pos_, 5) == "false") {
+      pos_ += 5;
+      return true;
+    }
+    if (ch == 'n' && input_.substr(pos_, 4) == "null") {
+      pos_ += 4;
+      return true;
+    }
+    if (ch == '-' || std::isdigit(static_cast<unsigned char>(ch))) {
+      ++pos_;
+      while (pos_ < input_.size()) {
+        char next = input_[pos_];
+        if (std::isdigit(static_cast<unsigned char>(next)) || next == '.' ||
+            next == 'e' || next == 'E' || next == '-' || next == '+') {
+          ++pos_;
+        } else {
+          break;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  bool AtEnd() {
+    SkipWhitespace();
+    return pos_ >= input_.size();
+  }
+
+ private:
+  bool SkipArray() {
+    if (!Consume('[')) {
+      return false;
+    }
+    SkipWhitespace();
+    if (Consume(']')) {
+      return true;
+    }
+    while (true) {
+      if (!SkipValue()) {
+        return false;
+      }
+      SkipWhitespace();
+      if (Consume(']')) {
+        return true;
+      }
+      if (!Consume(',')) {
+        return false;
+      }
+    }
+  }
+
+  bool SkipObject() {
+    if (!Consume('{')) {
+      return false;
+    }
+    SkipWhitespace();
+    if (Consume('}')) {
+      return true;
+    }
+    while (true) {
+      std::string key;
+      if (!ParseString(key)) {
+        return false;
+      }
+      if (!Consume(':')) {
+        return false;
+      }
+      if (!SkipValue()) {
+        return false;
+      }
+      SkipWhitespace();
+      if (Consume('}')) {
+        return true;
+      }
+      if (!Consume(',')) {
+        return false;
+      }
+    }
+  }
+
+  bool ParseScenarioObject(std::vector<std::string>& names) {
+    if (!Consume('{')) {
+      return false;
+    }
+    bool found_name = false;
+    SkipWhitespace();
+    if (Consume('}')) {
+      return false;
+    }
+    while (true) {
+      std::string key;
+      if (!ParseString(key)) {
+        return false;
+      }
+      if (!Consume(':')) {
+        return false;
+      }
+      if (key == "name") {
+        std::string name;
+        if (!ParseString(name)) {
+          return false;
+        }
+        names.push_back(name);
+        found_name = true;
+      } else {
+        if (!SkipValue()) {
+          return false;
+        }
+      }
+      SkipWhitespace();
+      if (Consume('}')) {
+        return found_name;
+      }
+      if (!Consume(',')) {
+        return false;
+      }
+    }
+  }
+
+  std::string_view input_;
+  size_t pos_ = 0;
+};
+
+bool ParseScenarioMatrix(std::string_view contents,
+                         std::vector<std::string>& names) {
+  JsonReader reader(contents);
+  if (!reader.Consume('{')) {
+    return false;
+  }
+  bool found_scenarios = false;
+  reader.SkipWhitespace();
+  if (reader.Consume('}')) {
+    return false;
+  }
+  while (true) {
+    std::string key;
+    if (!reader.ParseString(key)) {
+      return false;
+    }
+    if (!reader.Consume(':')) {
+      return false;
+    }
+    if (key == "scenarios") {
+      if (found_scenarios) {
+        return false;
+      }
+      found_scenarios = true;
+      if (!reader.ParseScenarioArray(names)) {
+        return false;
+      }
+    } else {
+      if (!reader.SkipValue()) {
+        return false;
+      }
+    }
+    reader.SkipWhitespace();
+    if (reader.Consume('}')) {
+      break;
+    }
+    if (!reader.Consume(',')) {
+      return false;
+    }
+  }
+  if (!found_scenarios || names.empty()) {
+    return false;
+  }
+  return reader.AtEnd();
+}
+
+ScenarioMatrixResult LoadScenarioMatrix(const fs::path& path) {
+  ScenarioMatrixResult result;
+  std::ifstream in(path);
+  if (!in) {
+    result.error = "Scenario matrix file missing: " + path.string();
+    return result;
+  }
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  std::string contents = buffer.str();
+  if (contents.empty() || !ParseScenarioMatrix(contents, result.names)) {
+    result.error = "Scenario matrix file invalid: " + path.string();
+  }
+  return result;
+}
 
 std::string NowIso8601() {
   std::time_t now = std::time(nullptr);
@@ -137,9 +449,13 @@ int main(int argc, char** argv) {
   double p95 = Percentile(latencies_ms, 0.95);
   double p99 = Percentile(latencies_ms, 0.99);
 
-  const std::vector<std::string> scenario_names = {
-      "read_heavy",     "write_heavy",  "mixed",     "hotspot_churn",
-      "rebalance",      "failover",     "thundering_herd", "coalescing_ab"};
+  const fs::path matrix_path = fs::path("bench/scenarios/scenario_matrix.json");
+  ScenarioMatrixResult scenario_matrix = LoadScenarioMatrix(matrix_path);
+  if (!scenario_matrix.error.empty()) {
+    std::cerr << scenario_matrix.error << '\n';
+    return 1;
+  }
+  const std::vector<std::string>& scenario_names = scenario_matrix.names;
   std::vector<ScenarioResult> scenario_results;
   scenario_results.reserve(scenario_names.size());
   for (const auto& name : scenario_names) {
