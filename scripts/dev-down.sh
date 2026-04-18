@@ -25,6 +25,19 @@ pid_matches() {
   [[ "${cmdline}" == *"${expected}"* ]]
 }
 
+pid_process_group() {
+  local pid="$1"
+  ps -p "${pid}" -o pgid= 2>/dev/null | tr -d ' '
+}
+
+is_process_group_running() {
+  local pgid="$1"
+  if [[ -z "${pgid}" ]]; then
+    return 1
+  fi
+  kill -0 -- "-${pgid}" 2>/dev/null
+}
+
 read_pid_file() {
   local pid_file="$1"
   if [[ ! -f "${pid_file}" ]]; then
@@ -66,10 +79,27 @@ stop_process() {
     return
   fi
 
-  echo "Stopping ${label} (pid ${pid})..."
-  kill "${pid}"
+  local pgid
+  pgid="$(pid_process_group "${pid}")"
+  local stop_group=0
+  if [[ "${pgid}" =~ ^[0-9]+$ ]]; then
+    stop_group=1
+  fi
+  if [[ "${stop_group}" -eq 1 ]]; then
+    echo "Stopping ${label} (process group ${pgid})..."
+    kill -- "-${pgid}"
+  else
+    echo "Stopping ${label} (pid ${pid})..."
+    kill "${pid}"
+  fi
   for _ in {1..40}; do
-    if ! kill -0 "${pid}" 2>/dev/null; then
+    if [[ "${stop_group}" -eq 1 ]]; then
+      if ! is_process_group_running "${pgid}"; then
+        rm -f "${pid_file}"
+        echo "${label} stopped."
+        return
+      fi
+    elif ! kill -0 "${pid}" 2>/dev/null; then
       rm -f "${pid_file}"
       echo "${label} stopped."
       return
@@ -78,7 +108,11 @@ stop_process() {
   done
 
   echo "${label} did not stop in time; killing."
-  kill -9 "${pid}" 2>/dev/null || true
+  if [[ "${stop_group}" -eq 1 ]]; then
+    kill -9 -- "-${pgid}" 2>/dev/null || true
+  else
+    kill -9 "${pid}" 2>/dev/null || true
+  fi
   rm -f "${pid_file}"
 }
 

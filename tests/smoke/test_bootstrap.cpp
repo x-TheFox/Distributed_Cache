@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -357,6 +358,25 @@ bool ProcessListContains(const std::string& needle) {
   return output.find(needle) != std::string::npos;
 }
 
+bool ProcessListLineContainsAll(const std::vector<std::string>& needles) {
+  auto output = ReadCommandOutput("ps -ax -o command");
+  std::istringstream stream(output);
+  std::string line;
+  while (std::getline(stream, line)) {
+    bool matched = true;
+    for (const auto& needle : needles) {
+      if (line.find(needle) == std::string::npos) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool IsProcessRunning(pid_t pid) {
   return pid > 0 && ::kill(pid, 0) == 0;
 }
@@ -586,6 +606,10 @@ TEST(Bootstrap, DevUpRollsBackCacheOnFailure) {
   }
 
   EXPECT_FALSE(ProcessListContains(node_arg));
+  auto dashboard_marker = (root / "dashboard").string();
+  auto dashboard_port = std::to_string(blocker->port());
+  EXPECT_FALSE(
+      ProcessListLineContainsAll({dashboard_marker, dashboard_port}));
   std::filesystem::remove_all(runtime_dir);
 }
 
