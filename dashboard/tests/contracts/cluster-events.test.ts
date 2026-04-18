@@ -18,12 +18,42 @@ describe("cluster event contract", () => {
       }
     },
     {
+      label: "extra node_heartbeat field",
+      payload: {
+        type: "node_heartbeat",
+        nodeId: "node-a",
+        ts: 1,
+        extra: true
+      }
+    },
+    {
+      label: "extra shard_moved field",
+      payload: {
+        type: "shard_moved",
+        shardId: 1,
+        from: "node-a",
+        to: "node-b",
+        ts: 1,
+        extra: "nope"
+      }
+    },
+    {
       label: "invalid replica_lag types",
       payload: {
         type: "replica_lag",
         shardId: 1,
         lagMs: "slow",
         ts: 1
+      }
+    },
+    {
+      label: "extra replica_lag field",
+      payload: {
+        type: "replica_lag",
+        shardId: 1,
+        lagMs: 500,
+        ts: 1,
+        extra: 123
       }
     }
   ];

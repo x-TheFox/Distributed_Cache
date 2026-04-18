@@ -15,6 +15,15 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
+const hasExactKeys = (value: Record<string, unknown>, keys: string[]): boolean => {
+  const valueKeys = Object.keys(value);
+  if (valueKeys.length !== keys.length) {
+    return false;
+  }
+
+  return keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
+};
+
 export function parseClusterEvent(input: unknown): ClusterEvent {
   if (!isRecord(input)) {
     throw new Error("Cluster event must be an object.");
@@ -23,7 +32,11 @@ export function parseClusterEvent(input: unknown): ClusterEvent {
   const { type } = input;
 
   if (type === "node_heartbeat") {
-    if (typeof input.nodeId !== "string" || !isFiniteNumber(input.ts)) {
+    if (
+      !hasExactKeys(input, ["type", "nodeId", "ts"]) ||
+      typeof input.nodeId !== "string" ||
+      !isFiniteNumber(input.ts)
+    ) {
       throw new Error("Invalid node_heartbeat event.");
     }
 
@@ -36,6 +49,7 @@ export function parseClusterEvent(input: unknown): ClusterEvent {
 
   if (type === "shard_moved") {
     if (
+      !hasExactKeys(input, ["type", "shardId", "from", "to", "ts"]) ||
       !isFiniteNumber(input.shardId) ||
       typeof input.from !== "string" ||
       typeof input.to !== "string" ||
@@ -55,6 +69,7 @@ export function parseClusterEvent(input: unknown): ClusterEvent {
 
   if (type === "replica_lag") {
     if (
+      !hasExactKeys(input, ["type", "shardId", "lagMs", "ts"]) ||
       !isFiniteNumber(input.shardId) ||
       !isFiniteNumber(input.lagMs) ||
       !isFiniteNumber(input.ts)
