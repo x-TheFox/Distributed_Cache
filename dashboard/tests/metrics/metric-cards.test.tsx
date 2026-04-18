@@ -6,8 +6,13 @@ import { describe, expect, it } from "vitest";
 import { MetricCards } from "@/components/metrics/metric-cards";
 
 describe("MetricCards", () => {
+  const escapeRegExp = (value: string) =>
+    value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
   const getCard = (container: HTMLElement, label: string) => {
-    const heading = within(container).getByText(label);
+    const heading = within(container).getByRole("heading", {
+      name: new RegExp(`^${escapeRegExp(label)}$`, "i"),
+    });
     const card = heading.closest("article");
     if (!card) {
       throw new Error(`Missing card for ${label}`);
