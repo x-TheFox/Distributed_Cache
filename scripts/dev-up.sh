@@ -37,6 +37,27 @@ require_cmd() {
   fi
 }
 
+start_detached() {
+  local log_file="$1"
+  shift
+  if command -v setsid >/dev/null 2>&1; then
+    setsid "$@" >"${log_file}" 2>&1 &
+  else
+    python3 - "$@" >"${log_file}" 2>&1 <<'PY' &
+import os
+import sys
+
+args = sys.argv[1:]
+try:
+    os.setsid()
+except Exception:
+    pass
+os.execvp(args[0], args)
+PY
+  fi
+  echo $!
+}
+
 is_running() {
   local pid="$1"
   if [[ -z "${pid}" ]]; then
@@ -255,16 +276,14 @@ start_cache_server() {
   fi
 
   echo "Starting cache server..."
-  setsid "${CACHE_BIN}" \
+  CACHE_PID="$(start_detached "${CACHE_LOG_FILE}" "${CACHE_BIN}" \
     --node-id="${CACHE_NODE_ID}" \
     --shard-count="${CACHE_SHARD_COUNT}" \
     --virtual-nodes="${CACHE_VIRTUAL_NODES}" \
     --resp-port="${CACHE_RESP_PORT}" \
     --grpc-port="${CACHE_GRPC_PORT}" \
     --metrics-port="${CACHE_METRICS_PORT}" \
-    ${CACHE_SERVER_ARGS} \
-    >"${CACHE_LOG_FILE}" 2>&1 &
-  CACHE_PID=$!
+    ${CACHE_SERVER_ARGS})"
   CACHE_STARTED=1
   echo "${CACHE_PID}" > "${CACHE_PID_FILE}"
 }
@@ -280,11 +299,10 @@ start_dashboard() {
   fi
 
   echo "Starting dashboard..."
-  NEXT_PUBLIC_CLUSTER_WS_URL="${DASHBOARD_WS_URL}" \
+  DASHBOARD_PID="$(NEXT_PUBLIC_CLUSTER_WS_URL="${DASHBOARD_WS_URL}" \
     NEXT_PUBLIC_DASHBOARD_SOURCE="${DASHBOARD_SOURCE}" \
-    setsid "${ROOT_DIR}/dashboard/node_modules/.bin/next" dev --port "${DASHBOARD_PORT}" \
-    >"${DASHBOARD_LOG_FILE}" 2>&1 &
-  DASHBOARD_PID=$!
+    start_detached "${DASHBOARD_LOG_FILE}" \
+    "${ROOT_DIR}/dashboard/node_modules/.bin/next" dev --port "${DASHBOARD_PORT}")"
   DASHBOARD_STARTED=1
   echo "${DASHBOARD_PID}" > "${DASHBOARD_PID_FILE}"
 }
@@ -294,7 +312,6 @@ require_cmd npm
 require_cmd node
 require_cmd curl
 require_cmd python3
-require_cmd setsid
 
 mkdir -p "${DEV_RUNTIME_DIR}"
 

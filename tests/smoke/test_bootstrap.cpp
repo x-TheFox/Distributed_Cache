@@ -353,6 +353,33 @@ std::string ReadCommandOutput(const std::string& command) {
   return output;
 }
 
+struct CommandResult {
+  int exit_code{-1};
+  std::string output;
+};
+
+CommandResult RunCommandCaptureOutput(const std::string& command) {
+  std::array<char, 256> buffer{};
+  std::string output;
+  FILE* pipe = ::popen(command.c_str(), "r");
+  if (!pipe) {
+    return CommandResult{-1, output};
+  }
+  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    output.append(buffer.data());
+  }
+  int status = ::pclose(pipe);
+  int exit_code = -1;
+  if (status >= 0) {
+    if (WIFEXITED(status)) {
+      exit_code = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+      exit_code = 128 + WTERMSIG(status);
+    }
+  }
+  return CommandResult{exit_code, output};
+}
+
 bool ProcessListContains(const std::string& needle) {
   auto output = ReadCommandOutput("ps -ax -o command");
   return output.find(needle) != std::string::npos;
@@ -592,8 +619,12 @@ TEST(Bootstrap, DevUpRollsBackCacheOnFailure) {
                                   std::to_string(blocker->port()));
   ScopedEnvVar env_dashboard_timeout("DASHBOARD_READY_TIMEOUT", "1");
 
-  int result = ::system((root / "scripts/dev-up.sh").c_str());
-  EXPECT_NE(result, 0);
+  auto command = (root / "scripts/dev-up.sh").string() + " 2>&1";
+  auto result = RunCommandCaptureOutput(command);
+  EXPECT_NE(result.exit_code, 0);
+  EXPECT_NE(result.output.find("Dashboard did not become ready."),
+            std::string::npos);
+  EXPECT_EQ(result.output.find("Missing required tool"), std::string::npos);
 
   auto pid_file = runtime_dir / "cache_server.pid";
   if (std::filesystem::exists(pid_file)) {
