@@ -82,7 +82,7 @@ stop_process() {
   local pgid
   pgid="$(pid_process_group "${pid}")"
   local stop_group=0
-  if [[ "${pgid}" =~ ^[0-9]+$ ]]; then
+  if [[ "${pgid}" =~ ^[0-9]+$ && "${pgid}" == "${pid}" ]]; then
     stop_group=1
   fi
   if [[ "${stop_group}" -eq 1 ]]; then

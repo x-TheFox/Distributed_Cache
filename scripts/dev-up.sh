@@ -131,7 +131,7 @@ stop_owned_process() {
   local pgid
   pgid="$(pid_process_group "${pid}")"
   local stop_group=0
-  if [[ "${pgid}" =~ ^[0-9]+$ ]]; then
+  if [[ "${pgid}" =~ ^[0-9]+$ && "${pgid}" == "${pid}" ]]; then
     stop_group=1
   fi
   if [[ "${stop_group}" -eq 1 ]]; then
@@ -255,7 +255,7 @@ start_cache_server() {
   fi
 
   echo "Starting cache server..."
-  "${CACHE_BIN}" \
+  setsid "${CACHE_BIN}" \
     --node-id="${CACHE_NODE_ID}" \
     --shard-count="${CACHE_SHARD_COUNT}" \
     --virtual-nodes="${CACHE_VIRTUAL_NODES}" \
