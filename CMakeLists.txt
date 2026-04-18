@@ -71,7 +71,13 @@ target_include_directories(cache_grpc_lib PUBLIC ${PROJECT_SOURCE_DIR}/src
 target_link_libraries(cache_grpc_lib PUBLIC cache_protocol_lib cache_proto_lib)
 
 add_executable(cache_server src/server/main.cpp)
-target_link_libraries(cache_server PRIVATE cache_server_lib)
+target_link_libraries(cache_server PRIVATE cache_server_lib
+                                          cache_core_lib
+                                          cache_protocol_lib
+                                          cache_cluster_lib
+                                          cache_metrics_lib
+                                          cache_grpc_lib
+                                          Threads::Threads)
 
 add_executable(cache_bench bench/cache_bench.cpp)
 target_link_libraries(cache_bench PRIVATE cache_core_lib)
