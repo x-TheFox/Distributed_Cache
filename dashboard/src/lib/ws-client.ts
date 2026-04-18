@@ -36,20 +36,27 @@ export function createClusterSocket(
     }
   };
 
-  const scheduleHeartbeat = () => {
+  const scheduleHeartbeat = (ws: WebSocket) => {
     if (heartbeatTimer) {
       clearTimeout(heartbeatTimer);
     }
 
     heartbeatTimer = setTimeout(() => {
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.close();
+      if (socket !== ws) {
+        return;
+      }
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
       }
     }, heartbeatTimeoutMs);
   };
 
-  const handleMessage = (event: MessageEvent) => {
-    scheduleHeartbeat();
+  const handleMessage = (ws: WebSocket) => (event: MessageEvent) => {
+    if (socket !== ws) {
+      return;
+    }
+
+    scheduleHeartbeat(ws);
 
     if (typeof event.data !== "string") {
       return;
@@ -68,19 +75,29 @@ export function createClusterSocket(
       return;
     }
 
-    socket = new WebSocket(url);
+    const ws = new WebSocket(url);
+    socket = ws;
 
-    socket.addEventListener("open", () => {
+    ws.addEventListener("open", () => {
+      if (socket !== ws) {
+        return;
+      }
       backoffMs = 1000;
-      scheduleHeartbeat();
+      scheduleHeartbeat(ws);
     });
-    socket.addEventListener("message", handleMessage);
-    socket.addEventListener("close", () => {
+    ws.addEventListener("message", handleMessage(ws));
+    ws.addEventListener("close", () => {
+      if (socket !== ws) {
+        return;
+      }
       clearTimers();
       scheduleReconnect();
     });
-    socket.addEventListener("error", () => {
-      socket?.close();
+    ws.addEventListener("error", () => {
+      if (socket !== ws) {
+        return;
+      }
+      ws.close();
     });
   };
 
