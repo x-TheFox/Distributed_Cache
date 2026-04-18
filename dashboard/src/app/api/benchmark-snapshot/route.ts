@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+
 type RawBenchmark = Record<string, unknown>;
 
 const resolveBenchmarkPath = () =>
@@ -36,6 +39,8 @@ const normalizeBenchmark = (raw: RawBenchmark) => {
 const isRecord = (value: unknown): value is RawBenchmark =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const noStoreHeaders = { "Cache-Control": "no-store" };
+
 export async function GET() {
   const artifactPath = resolveBenchmarkPath();
 
@@ -46,18 +51,18 @@ export async function GET() {
     if (!isRecord(parsed)) {
       return Response.json(
         { message: "Benchmark artifact has an unexpected shape." },
-        { status: 500 }
+        { status: 500, headers: noStoreHeaders }
       );
     }
 
     try {
       const normalized = normalizeBenchmark(parsed);
-      return Response.json(normalized);
+      return Response.json(normalized, { headers: noStoreHeaders });
     } catch (error) {
       if (error instanceof Error && error.message === "missing_fields") {
         return Response.json(
           { message: "Benchmark artifact is missing required fields." },
-          { status: 500 }
+          { status: 500, headers: noStoreHeaders }
         );
       }
       throw error;
@@ -71,6 +76,6 @@ export async function GET() {
       error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
         ? 404
         : 500;
-    return Response.json({ message }, { status });
+    return Response.json({ message }, { status, headers: noStoreHeaders });
   }
 }
