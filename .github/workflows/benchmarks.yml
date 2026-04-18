@@ -1,0 +1,53 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "bench/**"
+      - "src/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+
+permissions:
+  contents: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build benchmark
+        run: cmake --build build --target cache_bench --config Release
+
+      - name: Run benchmark
+        run: ./build/bench/cache_bench --out bench/out/latest.json
+
+      - name: Render SVG
+        run: python3 bench/render_svg.py bench/out/latest.json docs/generated/bench.svg
+
+      - name: Commit updated benchmark SVG
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- docs/generated/bench.svg; then
+            echo "No benchmark SVG changes to commit."
+            exit 0
+          fi
+          git add docs/generated/bench.svg
+          git commit -m "Update benchmark SVG"
+          git push
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-artifacts
+          path: |
+            bench/out/latest.json
+            docs/generated/bench.svg

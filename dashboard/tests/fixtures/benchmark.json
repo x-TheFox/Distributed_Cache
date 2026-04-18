@@ -1,0 +1,7 @@
+{
+  "timestamp": "2026-04-18T08:25:26Z",
+  "ops_per_sec": 123456.7,
+  "p99_ms": 2.5,
+  "read_ops": 16000,
+  "write_ops": 4000
+}

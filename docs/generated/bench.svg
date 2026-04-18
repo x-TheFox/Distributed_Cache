@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="180" viewBox="0 0 640 180">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+  </defs>
+  <rect width="640" height="180" rx="16" fill="url(#bg)" />
+  <text x="32" y="48" fill="#f8fafc" font-size="20" font-family="Verdana, sans-serif">Distributed Cache Benchmarks</text>
+  <text x="32" y="92" fill="#38bdf8" font-size="36" font-family="Verdana, sans-serif" font-weight="bold">3.29M</text>
+  <text x="32" y="124" fill="#e2e8f0" font-size="16" font-family="Verdana, sans-serif">ops/sec</text>
+  <text x="360" y="92" fill="#fbbf24" font-size="32" font-family="Verdana, sans-serif" font-weight="bold">0.001 ms</text>
+  <text x="360" y="124" fill="#e2e8f0" font-size="16" font-family="Verdana, sans-serif">p99 latency</text>
+  <text x="32" y="156" fill="#94a3b8" font-size="12" font-family="Verdana, sans-serif">20,000 ops · 6.1 ms</text>
+</svg>
