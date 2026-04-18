@@ -1,0 +1,13 @@
+<svg width="1200" height="675" viewBox="0 0 1200 675" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="675" fill="#0f172a" />
+  <rect x="40" y="40" width="1120" height="120" rx="18" fill="#111c34" stroke="#334155" />
+  <text x="80" y="100" fill="#e2e8f0" font-size="38" font-family="Arial, sans-serif">Cluster Dashboard</text>
+  <text x="80" y="140" fill="#94a3b8" font-size="20" font-family="Arial, sans-serif">Source: LIVE • WebSocket / Benchmark Snapshot / Simulation Events</text>
+  <rect x="40" y="190" width="540" height="200" rx="18" fill="#111c34" stroke="#334155" />
+  <rect x="620" y="190" width="540" height="200" rx="18" fill="#111c34" stroke="#334155" />
+  <rect x="40" y="420" width="1120" height="200" rx="18" fill="#111c34" stroke="#334155" />
+  <text x="70" y="255" fill="#e2e8f0" font-size="22" font-family="Arial, sans-serif">Connection Health</text>
+  <text x="650" y="255" fill="#e2e8f0" font-size="22" font-family="Arial, sans-serif">Performance Signals</text>
+  <text x="70" y="485" fill="#e2e8f0" font-size="22" font-family="Arial, sans-serif">Failover Simulation Timeline</text>
+  <text x="70" y="530" fill="#94a3b8" font-size="18" font-family="Arial, sans-serif">Diagnostics snapshot captured for README evidence.</text>
+</svg>

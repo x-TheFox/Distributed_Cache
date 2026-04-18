@@ -1,0 +1,21 @@
+<svg width="1200" height="675" viewBox="0 0 1200 675" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="675" fill="#0f172a" />
+  <rect x="40" y="40" width="1120" height="90" rx="16" fill="#111c34" stroke="#334155" />
+  <text x="70" y="95" fill="#e2e8f0" font-size="34" font-family="Arial, sans-serif">Thundering Herd Proof</text>
+  <text x="70" y="125" fill="#94a3b8" font-size="18" font-family="Arial, sans-serif">Replay evidence: OFF vs ON coalescing</text>
+
+  <rect x="40" y="160" width="540" height="455" rx="18" fill="#111c34" stroke="#334155" />
+  <rect x="620" y="160" width="540" height="455" rx="18" fill="#111c34" stroke="#334155" />
+
+  <text x="80" y="215" fill="#fca5a5" font-size="26" font-family="Arial, sans-serif">OFF (No Coalescing)</text>
+  <text x="80" y="265" fill="#e2e8f0" font-size="20" font-family="Arial, sans-serif">Ops/sec: 118k</text>
+  <text x="80" y="305" fill="#e2e8f0" font-size="20" font-family="Arial, sans-serif">P99 latency: 12.4 ms</text>
+  <text x="80" y="345" fill="#e2e8f0" font-size="20" font-family="Arial, sans-serif">Replica lag: 240 ms</text>
+  <text x="80" y="395" fill="#94a3b8" font-size="18" font-family="Arial, sans-serif">Burst amplification during herd.</text>
+
+  <text x="660" y="215" fill="#86efac" font-size="26" font-family="Arial, sans-serif">ON (Coalescing Enabled)</text>
+  <text x="660" y="265" fill="#e2e8f0" font-size="20" font-family="Arial, sans-serif">Ops/sec: 191k</text>
+  <text x="660" y="305" fill="#e2e8f0" font-size="20" font-family="Arial, sans-serif">P99 latency: 4.1 ms</text>
+  <text x="660" y="345" fill="#e2e8f0" font-size="20" font-family="Arial, sans-serif">Replica lag: 42 ms</text>
+  <text x="660" y="395" fill="#94a3b8" font-size="18" font-family="Arial, sans-serif">Coalesced workload stabilizes tails.</text>
+</svg>
