@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -15,6 +16,64 @@ std::vector<std::string> MakeKeys(size_t count) {
   return keys;
 }
 }  // namespace
+
+TEST(HashRing, RemoveNodeReassignsKeysAwayFromRemovedNode) {
+  cache::cluster::HashRing ring;
+  ring.AddNode("node-a", 128);
+  ring.AddNode("node-b", 128);
+
+  std::string key_on_a;
+  auto keys = MakeKeys(1000);
+  for (const auto& key : keys) {
+    if (ring.OwnerForKey(key) == "node-a") {
+      key_on_a = key;
+      break;
+    }
+  }
+
+  ASSERT_FALSE(key_on_a.empty());
+
+  ring.RemoveNode("node-a");
+
+  EXPECT_EQ(ring.OwnerForKey(key_on_a), "node-b");
+}
+
+TEST(HashRing, RemoveNodeMissingIsIdempotent) {
+  cache::cluster::HashRing ring;
+  ring.AddNode("node-a", 64);
+  ring.AddNode("node-b", 64);
+
+  auto owner_before = ring.OwnerForKey("alpha");
+  ASSERT_FALSE(owner_before.empty());
+
+  ring.RemoveNode("node-missing");
+
+  EXPECT_EQ(ring.OwnerForKey("alpha"), owner_before);
+}
+
+TEST(HashRing, AddNodeRejectsInvalidVirtualNodes) {
+  cache::cluster::HashRing ring;
+
+  EXPECT_THROW(ring.AddNode("node-a", 0), std::invalid_argument);
+  EXPECT_THROW(ring.AddNode("node-a", -3), std::invalid_argument);
+
+  EXPECT_TRUE(ring.OwnerForKey("alpha").empty());
+}
+
+TEST(HashRing, RouteKeyToNodeMatchesRingOwner) {
+  cache::cluster::HashRing ring;
+  ring.AddNode("node-a", 32);
+  ring.AddNode("node-b", 32);
+
+  EXPECT_EQ(cache::cluster::RouteKeyToNode(ring, "alpha"),
+            ring.OwnerForKey("alpha"));
+}
+
+TEST(HashRing, RouteKeyToNodeReturnsEmptyWhenRingEmpty) {
+  cache::cluster::HashRing ring;
+
+  EXPECT_TRUE(cache::cluster::RouteKeyToNode(ring, "alpha").empty());
+}
 
 TEST(HashRing, OwnerForKeyIsDeterministic) {
   cache::cluster::HashRing ring;

@@ -1,5 +1,6 @@
 #include "cluster/hash_ring.hpp"
 
+#include <stdexcept>
 #include <string>
 
 namespace cache::cluster {
@@ -32,7 +33,7 @@ uint64_t HashRing::TokenFor(const std::string& node_id, int vnode,
 
 void HashRing::AddNode(std::string node_id, int virtual_nodes) {
   if (virtual_nodes <= 0) {
-    return;
+    throw std::invalid_argument("virtual_nodes must be positive");
   }
 
   RemoveNode(node_id);
