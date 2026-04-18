@@ -41,6 +41,18 @@ def _load_matrix() -> dict:
     return json.loads(SCENARIO_MATRIX.read_text())
 
 
+def _render_svg(output_path: Path) -> str:
+    _ensure_output()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["python3", str(ROOT / "bench/render_svg.py"), str(BENCH_OUTPUT), str(output_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return output_path.read_text()
+
+
 def test_benchmark_json_contains_required_fields():
     data = _load_output()
     for field in ("ops_per_sec", "p99_ms"):
@@ -142,3 +154,10 @@ def test_benchmark_output_escapes_scenario_names():
         SCENARIO_MATRIX.write_text(original)
         if BENCH_OUTPUT.exists():
             BENCH_OUTPUT.unlink()
+
+
+def test_svg_contains_scenario_rows(tmp_path: Path):
+    svg = _render_svg(tmp_path / "bench.svg")
+    assert "Scenario Scoreboard" in svg
+    assert "read_heavy" in svg
+    assert "thundering_herd" in svg
