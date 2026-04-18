@@ -46,3 +46,4 @@ dist/
 !/docs/generated/bench.svg
 
 # Task 1 guardrails
+/docs/superpowers/
